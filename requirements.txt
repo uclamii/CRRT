@@ -1,0 +1,7 @@
+black==20.8b1
+flake8==3.9.1
+mypy==0.812
+numpy
+pandas==1.2.4
+scikit-learn
+nbstripout
