@@ -1,7 +1,9 @@
 black==20.8b1
 flake8==3.9.1
 mypy==0.812
-numpy
+numpy==1.19.2
 pandas==1.2.4
-scikit-learn
-nbstripout
+scikit-learn==0.24.1
+nbstripout==0.3.7
+hcuppy==0.0.7
+requests==2.25.1
