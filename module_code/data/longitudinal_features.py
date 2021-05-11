@@ -5,17 +5,18 @@ from data.longitudinal_utils import (
     hcuppy_map_code,
     time_window_mask,
 )
-from data.utils import read_files_and_combine
+from data.utils import loading_message, read_files_and_combine
 
 from hcuppy.ccs import CCSEngine
-from hcuppy.cpy import CPT
+from hcuppy.cpt import CPT
 
 
 def load_diagnoses(
     outcomes_df: pd.DataFrame,
     dx_file: str = "Encounter_Diagnoses_19-000093_10082020.txt",
 ) -> pd.DataFrame:
-    dx_df = read_files_and_combine(dx_file)
+    loading_message("Diagnoses")
+    dx_df = read_files_and_combine([dx_file])
 
     # convert icd10 to ccs to reduce number of categories for diagnoses.
     ce = CCSEngine(mode="dx")
@@ -46,6 +47,7 @@ def load_vitals(
     outcomes_df: pd.DataFrame,
     vitals_file: str = "Flowsheet_Vitals_19-000093_10082020.txt",
 ) -> pd.DataFrame:
+    loading_message("Vitals")
     vitals_df = read_files_and_combine(["Flowsheet_Vitals_19-000093_10082020.txt"])
     vitals_df = split_sbp_and_dbp(vitals_df)
 
@@ -102,6 +104,7 @@ def split_sbp_and_dbp(vitals_df: pd.DataFrame) -> pd.DataFrame:
 def load_medications(
     outcomes_df: pd.DataFrame, rx_file: str = "Medications_19-000093_10082020.txt",
 ) -> pd.DataFrame:
+    loading_message("Medications")
     rx_df = read_files_and_combine([rx_file])
 
     return rx_df
@@ -110,6 +113,7 @@ def load_medications(
 def load_labs(
     outcomes_df: pd.DataFrame, labs_file: str = "Labs_19-000093_10082020.txt"
 ) -> pd.DataFrame:
+    loading_message("Labs")
     labs_df = read_files_and_combine([labs_file])
     # Force numeric, ignore strings
     labs_df["RESULTS"] = pd.to_numeric(labs_df["RESULTS"], errors="coerce")
@@ -130,6 +134,7 @@ def load_problems(
     problems_file: str = "Problem_Lists_19-000093_10082020.txt",
     problems_dx_file: str = "problem_list_diagnoses_19-000093_10082020.txt",
 ) -> pd.DataFrame:
+    loading_message("Problems")
     problems_df = read_files_and_combine([problems_dx_file, problems_file])
     problems_df.columns = [col.upper() for col in problems_df.columns]
 
@@ -163,6 +168,7 @@ def load_procedures(
     outcomes_df: pd.DataFrame,
     procedures_file: str = "Procedures_19-000093_10082020.txt",
 ) -> pd.DataFrame:
+    loading_message("Procedures")
     procedures_df = read_files_and_combine([procedures_file])
 
     # Convert CPT codes to their sections (less granular)
@@ -182,10 +188,10 @@ def load_procedures(
 
 
 def aggregate_cat_feature(
-    cat_df: pd.DataFrame, time_col: str, agg_on: str
+    outcomes_df: pd.DataFrame, cat_df: pd.DataFrame, time_col: str, agg_on: str
 ) -> pd.DataFrame:
     # mask for time
-    cat_df = time_window_mask(cat_df, time_col)
+    cat_df = time_window_mask(outcomes_df, cat_df, time_col)
 
     # Get dummies for the categorical column
     cat_feature = pd.get_dummies(cat_df[["IP_PATIENT_ID", agg_on]], columns=[agg_on])

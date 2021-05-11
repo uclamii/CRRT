@@ -6,6 +6,10 @@ from typing import List
 DATA_DIR = "/home/davina/Private/dialysis-data"
 
 
+def loading_message(what_is_loading: str) -> None:
+    print("*" * 50 + f"Loading {what_is_loading}..." + "*" * 50)
+
+
 def read_files_and_combine(
     files: List[str], on: List[str] = ["IP_PATIENT_ID"], how: str = "inner"
 ) -> pd.DataFrame:
@@ -18,7 +22,9 @@ def read_files_and_combine(
     for file in files:
         try:
             # Try normally reading the csv with pandas, if it fails the formatting is strange
-            dfs.append(pd.read_csv(f"{DATA_DIR}/{file}"))
+            df = pd.read_csv(f"{DATA_DIR}/{file}")
+            # Enforce all caps column names
+            dfs.append(df.set_axis(df.columns.str.upper, axis=1))
         except:
             print(f"Unexpected encoding in {file}")
             default_guess = "cp1252"
@@ -34,9 +40,11 @@ def read_files_and_combine(
             # Try reading the file with the assumed or inferred encoding.
             if encoding == "unknown-8bit":
                 print(f"Assuming {default_guess}...")
-                dfs.append(pd.read_csv(f"{DATA_DIR}/{file}", encoding=default_guess))
-            else:
-                dfs.append(pd.read_csv(f"{DATA_DIR}/{file}", encoding=encoding))
+                encoding = default_guess
+
+            df = pd.read_csv(f"{DATA_DIR}/{file}", encoding=encoding)
+            # Enforce all caps column names
+            dfs.append(df.set_axis(df.columns.str.upper(), axis=1))
 
     combined = reduce(lambda df1, df2: pd.merge(df1, df2, on=on, how=how), dfs)
     return combined

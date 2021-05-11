@@ -21,15 +21,16 @@ def time_window_mask(
 
     # Merge feature with end date of outcome
     merged_df = df.merge(
-        outcomes_df[["IP_PATIENT_ID", "End Date"]], on="IP_PATIENT_ID", how="left"
+        outcomes_df[["IP_PATIENT_ID", "End Date"]], on="IP_PATIENT_ID", how="right"
     )
 
     # Enforce date columnn is a datetime object
+    end_date = pd.to_datetime(merged_df["End Date"])
     dates = pd.to_datetime(merged_df[timestamp_feature_name])
 
     # Mask: keep entries for feature with a date within time_window years and months from end date of outcome
     mask = dates >= (
-        merged_df["End Date"]
+        end_date
         - timedelta(days=360 * time_window["YEARS"], weeks=4 * time_window["MONTHS"])
     )
 

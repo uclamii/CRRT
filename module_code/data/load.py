@@ -2,7 +2,7 @@ from functools import reduce
 from typing import List
 import pandas as pd
 
-from module_code.data.longitudinal_features import (
+from data.longitudinal_features import (
     load_diagnoses,
     load_vitals,
     load_labs,
@@ -10,12 +10,13 @@ from module_code.data.longitudinal_features import (
     load_problems,
     load_procedures,
 )
-from module_code.data.utils import DATA_DIR, read_files_and_combine
+from data.utils import DATA_DIR, loading_message, read_files_and_combine
 
 
 def load_outcomes(
     outcome_file: str = "CRRT Deidentified 2017-2019.csv",
 ) -> pd.DataFrame:
+    loading_message("Outcomes")
     outcomes_df = pd.read_csv(f"{DATA_DIR}/{outcome_file}")
 
     positive_outcomes = ["Recov. renal funct.", "Transitioned to HD"]
@@ -70,7 +71,7 @@ def merge_features_with_outcome() -> pd.DataFrame:
     longitudinal_dfs = [
         load_diagnoses(outcomes_df=outcomes_df),
         load_vitals(outcomes_df=outcomes_df),
-        load_medications(outcomes_df=outcomes_df),
+        # load_medications(outcomes_df=outcomes_df), # TODO: still in progress
         load_labs(outcomes_df=outcomes_df),
         load_problems(outcomes_df=outcomes_df),
         load_procedures(outcomes_df=outcomes_df),
