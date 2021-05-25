@@ -43,10 +43,11 @@ def load_outcomes(
 
 
 def load_static_features(
-    static_features: List[str] = [
-        "Patient_Demographics_19-000093_10082020.txt",
-        "Social_History_19-000093_10082020.txt",
-    ],
+    static_features: List[str] = (
+            "Allergies_19-000093_10082020.txt",
+            "Patient_Demographics_19-000093_10082020.txt",
+            "Social_History_19-000093_10082020.txt",
+    ),
     provider_mapping_file: str = "providers_19-000093_10082020.txt",
 ) -> pd.DataFrame:
     static_df = read_files_and_combine(static_features)
