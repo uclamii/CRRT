@@ -17,20 +17,38 @@ def preprocess_data(df):
     """
     # features not currently included: Month, Hospital name, CRRT Total Days, End Date, Machine, ICU
     columns = list(df.columns)
-    id_col = 'IP_PATIENT_ID'
-    cat_features = ['GENDER', 'RACE', 'ETHNICITY', 'PCP_PROVIDER_TYPE', 'TOBACCO_USER', 'CIGARETTES_YN',
-                    'SMOKING_TOB_STATUS', 'ALCOHOL_USER', 'IV_DRUG_USER_YN', 'ALLERGEN_ID']
-    real_features = ['AGE', 'TOBACCO_PAK_PER_DY', 'TOBACCO_USED_YEARS', 'ALCOHOL_OZ_PER_WK', 'ILLICIT_DRUG_FREQ'] \
-                    + [col for col in columns if ("VITAL_SIGN" in col) or ("RESULT" in col)]
-    counts_features = [col for col in columns if ("CCS_CODE" in col) or ("CPT_SECTION" in col)]
+    id_col = "IP_PATIENT_ID"
+    cat_features = [
+        "GENDER",
+        "RACE",
+        "ETHNICITY",
+        "PCP_PROVIDER_TYPE",
+        "TOBACCO_USER",
+        "CIGARETTES_YN",
+        "SMOKING_TOB_STATUS",
+        "ALCOHOL_USER",
+        "IV_DRUG_USER_YN",
+        "ALLERGEN_ID",
+    ]
+    real_features = [
+        "AGE",
+        "TOBACCO_PAK_PER_DY",
+        "TOBACCO_USED_YEARS",
+        "ALCOHOL_OZ_PER_WK",
+        "ILLICIT_DRUG_FREQ",
+    ] + [col for col in columns if ("VITAL_SIGN" in col) or ("RESULT" in col)]
+    counts_features = [
+        col for col in columns if ("CCS_CODE" in col) or ("CPT_SECTION" in col)
+    ]
     target = ["recommend_dialysis"]
     select_cols = [id_col] + cat_features + real_features + counts_features + target
     df = df[select_cols]
 
-    df = convert_to_numeric(df, real_features)
     df = fill_missing_values(df, cat_features, real_features, counts_features)
+    # needs to happen after filling missing or else you'll get invalid entry nan
+    df = convert_to_numeric(df, real_features)
 
-    #drop columns with all nan values
+    # drop columns with all nan values
     df = df[df.columns[~df.isna().all()]]
 
     df = one_hot_encode(df, cat_features)
@@ -50,8 +68,8 @@ def convert_to_numeric(df, real_features):
     -------
         pandas.DataFrame
     """
-    if 'ALCOHOL_OZ_PER_WK' in real_features:
-        df['ALCOHOL_OZ_PER_WK'] = df['ALCOHOL_OZ_PER_WK'].apply(alc_freq_to_numeric)
+    if "ALCOHOL_OZ_PER_WK" in real_features:
+        df["ALCOHOL_OZ_PER_WK"] = df["ALCOHOL_OZ_PER_WK"].apply(alc_freq_to_numeric)
     return df
 
 
@@ -61,7 +79,7 @@ def alc_freq_to_numeric(x):
     if x == "3.6 - 4.2":
         return 3.9
     if x == ".6":
-        return .6
+        return 0.6
     if x == "3.6":
         return 3.6
     if x == "1.8 - 3":
@@ -106,21 +124,21 @@ def fill_missing_values(df, cat_features, real_features, counts_features):
     # in the training vector, convert to mean of train column
     # special static features included
 
-    if 'TOBACCO_USER' in cat_features:
-        df['TOBACCO_USER'].fillna('Never', inplace=True)
-    if 'ALCOHOL_USER' in cat_features:
-        df['ALCOHOL_USER'].fillna('No', inplace=True)
-    if 'PCP_PROVIDER_TYPE' in cat_features:
-        df['PCP_PROVIDER_TYPE'].fillna('Physician', inplace=True)
+    if "TOBACCO_USER" in cat_features:
+        df["TOBACCO_USER"].fillna("Never", inplace=True)
+    if "ALCOHOL_USER" in cat_features:
+        df["ALCOHOL_USER"].fillna("No", inplace=True)
+    if "PCP_PROVIDER_TYPE" in cat_features:
+        df["PCP_PROVIDER_TYPE"].fillna("Physician", inplace=True)
 
-    if 'TOBACCO_PAK_PER_DY' in real_features:
-        df['TOBACCO_PAK_PER_DY'].fillna(0, inplace=True)
-    if 'TOBACCO_USED_YEARS' in real_features:
-        df['TOBACCO_USED_YEARS'].fillna(0, inplace=True)
-    if 'ALCOHOL_OZ_PER_WK' in real_features:
-        df['ALCOHOL_OZ_PER_WK'].fillna(0, inplace=True)
-    if 'ILLICIT_DRUG_FREQ' in real_features:
-        df['ILLICIT_DRUG_FREQ'].fillna(0, inplace=True)
+    if "TOBACCO_PAK_PER_DY" in real_features:
+        df["TOBACCO_PAK_PER_DY"].fillna(0, inplace=True)
+    if "TOBACCO_USED_YEARS" in real_features:
+        df["TOBACCO_USED_YEARS"].fillna(0, inplace=True)
+    if "ALCOHOL_OZ_PER_WK" in real_features:
+        df["ALCOHOL_OZ_PER_WK"].fillna(0, inplace=True)
+    if "ILLICIT_DRUG_FREQ" in real_features:
+        df["ILLICIT_DRUG_FREQ"].fillna(0, inplace=True)
 
     for ft in counts_features:
         df[ft].fillna(0, inplace=True)
@@ -142,12 +160,7 @@ def one_hot_encode(df, cat_features):
     """
     for column in cat_features:
         temp_df = pd.get_dummies(df[column], prefix=column)
-        df = pd.merge(
-            left=df,
-            right=temp_df,
-            left_index=True,
-            right_index=True,
-        )
+        df = pd.merge(left=df, right=temp_df, left_index=True, right_index=True,)
         df = df.drop(columns=column)
     return df
 

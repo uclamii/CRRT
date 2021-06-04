@@ -3,7 +3,8 @@ import pandas as pd
 from functools import reduce
 from typing import List
 
-DATA_DIR = r"C:\Users\arvin\Documents\ucla research\CRRT project"
+DATA_DIR = "/home/davina/Private/dialysis-data"
+# DATA_DIR = r"C:\Users\arvin\Documents\ucla research\CRRT project"
 
 
 def loading_message(what_is_loading: str) -> None:

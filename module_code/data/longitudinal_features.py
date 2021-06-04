@@ -100,14 +100,23 @@ def split_sbp_and_dbp(vitals_df: pd.DataFrame) -> pd.DataFrame:
     return vitals_df
 
 
-# TODO: get epic drug categories, or figure out how to reduce dimensionality
 def load_medications(
-    outcomes_df: pd.DataFrame, rx_file: str = "Medications_19-000093_10082020.txt",
+    outcomes_df: pd.DataFrame, rx_file: str = "meds.txt",
 ) -> pd.DataFrame:
+    """
+    NOTE: The medications file originally was Medications_19-000093_10082020.txt
+    We needed epic medication classes for less granularity which was processed and ran
+    by Javier and returned as meds.txt.
+
+    There are 3 classes: ["MEDISPAN_CLASS_NAME", "THERA_CLASS", "PHARM_SUBCLASS"]
+    This would reduce us to: 99, 18, and 459 extra flags for medications respectively.
+    """
     loading_message("Medications")
     rx_df = read_files_and_combine([rx_file])
-
-    return rx_df
+    rx_feature = aggregate_cat_feature(
+        outcomes_df, rx_df, time_col="ORDER_DATE", agg_on="PHARM_SUBCLASS"
+    )
+    return rx_feature
 
 
 def load_labs(
