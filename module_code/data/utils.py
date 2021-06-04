@@ -3,7 +3,7 @@ import pandas as pd
 from functools import reduce
 from typing import List
 
-DATA_DIR = "/home/davina/Private/dialysis-data"
+DATA_DIR = r"C:\Users\arvin\Documents\ucla research\CRRT project"
 
 
 def loading_message(what_is_loading: str) -> None:
@@ -22,7 +22,7 @@ def read_files_and_combine(
     for file in files:
         try:
             # Try normally reading the csv with pandas, if it fails the formatting is strange
-            df = pd.read_csv(f"{DATA_DIR}/{file}")
+            df = pd.read_csv(os.path.join(DATA_DIR, file))
             # Enforce all caps column names
             dfs.append(df.set_axis(df.columns.str.upper, axis=1))
         except:
@@ -32,17 +32,19 @@ def read_files_and_combine(
             # get file encoding using file -i and extracting name with sed
             # ref: https://unix.stackexchange.com/a/393949
             # -n: don't print unless we say. s/ search, .* match any, charset=, // remove text up until after =, print remaining
-            command = f"file -i {DATA_DIR}/{file} | sed -n 's/.*charset=//p'"
+            # command = f"file -i {DATA_DIR}/{file} | sed -n 's/.*charset=//p'"
             # [:-1] ignore newline
-            encoding = os.popen(command).read()[:-1]
-            print(f"Encoding was {encoding} instead of assumed utf-8.")
+            # encoding = os.popen(command).read()[:-1]
+            # print(f"Encoding was {encoding} instead of assumed utf-8.")
 
             # Try reading the file with the assumed or inferred encoding.
-            if encoding == "unknown-8bit":
-                print(f"Assuming {default_guess}...")
-                encoding = default_guess
+            # if encoding == "unknown-8bit":
+            # print(f"Assuming {default_guess}...")
 
-            df = pd.read_csv(f"{DATA_DIR}/{file}", encoding=encoding)
+            # comment out the above section if you are using Windows and use default encoding
+            encoding = default_guess
+
+            df = pd.read_csv(os.path.join(DATA_DIR, file), encoding=encoding)
             # Enforce all caps column names
             dfs.append(df.set_axis(df.columns.str.upper(), axis=1))
 
