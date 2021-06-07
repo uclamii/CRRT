@@ -27,18 +27,18 @@ def load_diagnoses(
         dx_df[icd10_mask],
         code_col="ICD_CODE",
         exploded_cols=[
-            "CCS_CODE",
-            "CCS_DESCRIPTION",
-            "CCS_LEVEL1",
-            "CCS_LEVEL1_DESCRIPTION",
-            "CCS_LEVEL2",
-            "CCS_LEVEL2_DESCRIPTION",
+            "dx_CCS_CODE",
+            "dx_CCS_DESCRIPTION",
+            "dx_CCS_LEVEL1",
+            "dx_CCS_LEVEL1_DESCRIPTION",
+            "dx_CCS_LEVEL2",
+            "dx_CCS_LEVEL2_DESCRIPTION",
         ],
         hcuppy_converter_function=ce.get_ccs,
     )
 
     dx_feature = aggregate_cat_feature(
-        outcomes_df, dx_df, time_col="DIAGNOSIS_DATE", agg_on="CCS_CODE"
+        outcomes_df, dx_df, time_col="DIAGNOSIS_DATE", agg_on="dx_CCS_CODE"
     )
     return dx_feature
 
@@ -156,18 +156,18 @@ def load_problems(
         problems_df[active_and_icd10_mask],
         code_col="ICD_CODE",
         exploded_cols=[
-            "CCS_CODE",
-            "CCS_DESCRIPTION",
-            "CCS_LEVEL1",
-            "CCS_LEVEL1_DESCRIPTION",
-            "CCS_LEVEL2",
-            "CCS_LEVEL2_DESCRIPTION",
+            "pr_CCS_CODE",
+            "pr_CCS_DESCRIPTION",
+            "pr_CCS_LEVEL1",
+            "pr_CCS_LEVEL1_DESCRIPTION",
+            "pr_CCS_LEVEL2",
+            "pr_CCS_LEVEL2_DESCRIPTION",
         ],
         hcuppy_converter_function=ce.get_ccs,
     )
 
     problems_feature = aggregate_cat_feature(
-        outcomes_df, problems_df, time_col="NOTED_DATE", agg_on="CCS_CODE"
+        outcomes_df, problems_df, time_col="NOTED_DATE", agg_on="pr_CCS_CODE"
     )
 
     return problems_feature

@@ -40,7 +40,7 @@ def preprocess_data(df):
     counts_features = [
         col for col in columns if ("CCS_CODE" in col) or ("CPT_SECTION" in col)
     ]
-    target = ["recommend_dialysis"]
+    target = ["recommend_crrt"]
     select_cols = [id_col] + cat_features + real_features + counts_features + target
     df = df[select_cols]
 

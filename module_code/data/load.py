@@ -35,9 +35,9 @@ def load_outcomes(
     outcomes_df = outcomes_df[exclude_peds_mask & exactly_one_outcome_mask]
 
     #### Construct Binary Outcome ####
-    # Recommend dialysis if they had a positive outcome.
-    recommend_dialysis = (outcomes_df[positive_outcomes] == 1).any(axis=1)
-    outcomes_df["recommend_dialysis"] = recommend_dialysis.astype(int)
+    # Recommend CRRT if they had a positive outcome.
+    recommend_crrt = (outcomes_df[positive_outcomes] == 1).any(axis=1)
+    outcomes_df["recommend_crrt"] = recommend_crrt.astype(int)
 
     return outcomes_df
 
