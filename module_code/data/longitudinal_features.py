@@ -1,9 +1,10 @@
+import logging
 import pandas as pd
 
 from data.longitudinal_utils import (
-    AGGREGATE_FUNCTIONS,
+    aggregate_cat_feature,
+    aggregate_ctn_feature,
     hcuppy_map_code,
-    time_window_mask,
 )
 from data.utils import loading_message, read_files_and_combine
 
@@ -38,7 +39,7 @@ def load_diagnoses(
     )
 
     dx_feature = aggregate_cat_feature(
-        outcomes_df, dx_df, time_col="DIAGNOSIS_DATE", agg_on="dx_CCS_CODE"
+        dx_df, agg_on="dx_CCS_CODE", outcomes_df=outcomes_df, time_col="DIAGNOSIS_DATE"
     )
     return dx_feature
 
@@ -48,7 +49,7 @@ def load_vitals(
     vitals_file: str = "Flowsheet_Vitals_19-000093_10082020.txt",
 ) -> pd.DataFrame:
     loading_message("Vitals")
-    vitals_df = read_files_and_combine(["Flowsheet_Vitals_19-000093_10082020.txt"])
+    vitals_df = read_files_and_combine([vitals_file])
     vitals_df = split_sbp_and_dbp(vitals_df)
 
     # drop duplicates for the same patient for the same vital (taken at same time indicates duplicate)
@@ -56,7 +57,7 @@ def load_vitals(
     vitals_df = vitals_df.drop_duplicates(
         subset=["IP_PATIENT_ID", "VITAL_SIGN_TYPE", "VITAL_SIGN_TAKEN_TIME"]
     )
-    f"Dropped {old_size - vitals_df.shape[0]} rows that were duplicates."
+    logging.info(f"Dropped {old_size - vitals_df.shape[0]} rows that were duplicates.")
 
     # these vitals are not float point numbers, we want to ignore them and then convert the vitals to float to aggregate
     ignore_vitals = ["O2 Device"]
@@ -69,9 +70,9 @@ def load_vitals(
     vitals_feature = aggregate_ctn_feature(
         outcomes_df,
         vitals_df,
-        time_col="VITAL_SIGN_TAKEN_TIME",
         agg_on="VITAL_SIGN_TYPE",
         agg_values_col="VITAL_SIGN_VALUE",
+        time_col="VITAL_SIGN_TAKEN_TIME",
     )
 
     return vitals_feature
@@ -82,18 +83,11 @@ def split_sbp_and_dbp(vitals_df: pd.DataFrame) -> pd.DataFrame:
     vitals_df["VITAL_SIGN_TYPE"].replace({"BP": "SBP/DBP"}, inplace=True)
     explode_cols = ["VITAL_SIGN_VALUE", "VITAL_SIGN_TYPE"]
 
-    def try_split_col(col: pd.Series):
-        # Split col with "/" in it (only BP values and name) from explode_cols
-        try:
-            return col.str.split("/").explode()
-        except:
-            return col
-
     # Ref: https://stackoverflow.com/a/57122617/1888794
     # don't explode the columsn you set index to, explode the rest via apply, reset everything to normal
     vitals_df = (
         vitals_df.set_index(list(vitals_df.columns.difference(explode_cols)))
-        .apply(try_split_col)
+        .apply(lambda col: col.str.split("/").explode())
         .reset_index()
         .reindex(vitals_df.columns, axis=1)
     )
@@ -114,7 +108,7 @@ def load_medications(
     loading_message("Medications")
     rx_df = read_files_and_combine([rx_file])
     rx_feature = aggregate_cat_feature(
-        outcomes_df, rx_df, time_col="ORDER_DATE", agg_on="PHARM_SUBCLASS"
+        rx_df, agg_on="PHARM_SUBCLASS", outcomes_df=outcomes_df, time_col="ORDER_DATE"
     )
     return rx_feature
 
@@ -130,9 +124,9 @@ def load_labs(
     labs_feature = aggregate_ctn_feature(
         outcomes_df,
         labs_df,
-        time_col="ORDER_TIME",
         agg_on="DESCRIPTION",
         agg_values_col="RESULTS",
+        time_col="ORDER_TIME",
     )
 
     return labs_feature
@@ -167,7 +161,10 @@ def load_problems(
     )
 
     problems_feature = aggregate_cat_feature(
-        outcomes_df, problems_df, time_col="NOTED_DATE", agg_on="pr_CCS_CODE"
+        problems_df,
+        agg_on="pr_CCS_CODE",
+        outcomes_df=outcomes_df,
+        time_col="NOTED_DATE",
     )
 
     return problems_feature
@@ -190,53 +187,10 @@ def load_procedures(
     )
 
     procedures_feature = aggregate_cat_feature(
-        outcomes_df, procedures_df, time_col="PROC_DATE", agg_on="CPT_SECTION"
+        procedures_df,
+        agg_on="CPT_SECTION",
+        outcomes_df=outcomes_df,
+        time_col="PROC_DATE",
     )
 
     return procedures_feature
-
-
-def aggregate_cat_feature(
-    outcomes_df: pd.DataFrame, cat_df: pd.DataFrame, time_col: str, agg_on: str
-) -> pd.DataFrame:
-    # mask for time
-    cat_df = time_window_mask(outcomes_df, cat_df, time_col)
-
-    # Get dummies for the categorical column
-    cat_feature = pd.get_dummies(cat_df[["IP_PATIENT_ID", agg_on]], columns=[agg_on])
-    # Sum across a patient (within a time window)
-    cat_feature = cat_feature.groupby("IP_PATIENT_ID").apply(lambda df: df.sum(axis=0))
-
-    # fix indices ruined by groupby
-    cat_feature = cat_feature.drop("IP_PATIENT_ID", axis=1).reset_index()
-
-    return cat_feature
-
-
-def aggregate_ctn_feature(
-    outcomes_df: pd.DataFrame,
-    ctn_df: pd.DataFrame,
-    time_col: str,
-    agg_on: str,
-    agg_values_col: str,
-) -> pd.DataFrame:
-    """Aggregate a continuous longitudinal feature (e.g., vitals, labs).
-    Filter time window based on a column name provided.
-    Aggregate on a column name provided:
-        need a column for the name to group by, and the corresponding value column name.
-    """
-    # filter to window
-    ctn_df = time_window_mask(outcomes_df, ctn_df, time_col)
-
-    # Apply aggregate functions (within time window)
-    ctn_feature = ctn_df.groupby(["IP_PATIENT_ID", agg_on]).agg(
-        {agg_values_col: AGGREGATE_FUNCTIONS}
-    )
-
-    # Flatten aggregations from multi_index into a feature vector
-    ctn_feature = ctn_feature.unstack()
-    ctn_feature.columns = ctn_feature.columns.map("_".join)
-    ctn_feature.reset_index(inplace=True)
-
-    return ctn_feature
-

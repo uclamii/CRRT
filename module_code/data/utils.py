@@ -1,14 +1,44 @@
+import logging
 import os
 import pandas as pd
 from functools import reduce
 from typing import List
+from data.longitudinal_utils import aggregate_cat_feature
 
+# Just uncomment for the data_dir that makes sense for your machine
 DATA_DIR = "/home/davina/Private/dialysis-data"
 # DATA_DIR = r"C:\Users\arvin\Documents\ucla research\CRRT project"
 
 
+def onehot(
+    df: pd.DataFrame, cols_to_onehot: List[str], sum_across_patient: bool = False,
+) -> pd.DataFrame:
+    """
+    One-hot encodes list of features and add it back into the df.
+    If summing across the patient, it will aggregate across that patient (which shouldn't affect columns that don't have more than one entry anyway.)
+    """
+    if sum_across_patient:
+        onehot_dfs = [
+            aggregate_cat_feature(df, onehot_col) for onehot_col in cols_to_onehot
+        ]
+        # add back into the df, drop the original columns since we have onehot version now
+        # we have to merge instead of concat bc agg_cat_features leaves in patient id (for summation)
+        return reduce(
+            lambda df1, df2: pd.merge(df1, df2, on="IP_PATIENT_ID"), onehot_dfs,
+        )
+
+    # otherwise, just do normal dummies and concat
+    onehot_dfs = [
+        pd.get_dummies(df[onehot_col], prefix=onehot_col)
+        for onehot_col in cols_to_onehot
+    ]
+    # add back into the df, drop the original columns since we have onehot version now
+    return pd.concat([df.drop(cols_to_onehot, axis=1)] + onehot_dfs, axis=1)
+
+
 def loading_message(what_is_loading: str) -> None:
-    print("*" * 50 + f"Loading {what_is_loading}..." + "*" * 50)
+    """Helper function to know what table is being loaded during preprocessing."""
+    logging.info("*" * 5 + f"Loading {what_is_loading}..." + "*" * 5)
 
 
 def read_files_and_combine(
@@ -24,30 +54,12 @@ def read_files_and_combine(
         try:
             # Try normally reading the csv with pandas, if it fails the formatting is strange
             df = pd.read_csv(os.path.join(DATA_DIR, file))
-            # Enforce all caps column names
-            dfs.append(df.set_axis(df.columns.str.upper, axis=1))
-        except:
-            print(f"Unexpected encoding in {file}")
-            default_guess = "cp1252"
+        except IOError:
+            logging.warning(f"Unexpected encoding in {file}. Encoding with cp1252.")
+            df = pd.read_csv(os.path.join(DATA_DIR, file), encoding="cp1252")
 
-            # get file encoding using file -i and extracting name with sed
-            # ref: https://unix.stackexchange.com/a/393949
-            # -n: don't print unless we say. s/ search, .* match any, charset=, // remove text up until after =, print remaining
-            # command = f"file -i {DATA_DIR}/{file} | sed -n 's/.*charset=//p'"
-            # [:-1] ignore newline
-            # encoding = os.popen(command).read()[:-1]
-            # print(f"Encoding was {encoding} instead of assumed utf-8.")
-
-            # Try reading the file with the assumed or inferred encoding.
-            # if encoding == "unknown-8bit":
-            # print(f"Assuming {default_guess}...")
-
-            # comment out the above section if you are using Windows and use default encoding
-            encoding = default_guess
-
-            df = pd.read_csv(os.path.join(DATA_DIR, file), encoding=encoding)
-            # Enforce all caps column names
-            dfs.append(df.set_axis(df.columns.str.upper(), axis=1))
+        # Enforce all caps column names
+        dfs.append(df.set_axis(df.columns.str.upper(), axis=1))
 
     combined = reduce(lambda df1, df2: pd.merge(df1, df2, on=on, how=how), dfs)
     return combined
