@@ -67,6 +67,7 @@ def load_static_features(
     static_df = read_files_and_combine(static_features, how="outer")
     static_df = map_provider_id_to_type(static_df)
 
+    # TODO: only do this if file doesn't exist
     # save description of allergen code as a df mapping
     allergen_code_to_description_mapping = static_df[
         ["ALLERGEN_ID", "DESCRIPTION"]
@@ -81,6 +82,7 @@ def load_static_features(
     # all binary vars are encoded 0/1 (no/yes)
     cols_to_onehot = [
         "ALLERGEN_ID",
+        # TODO: we should pick only one: race or ethnicity, but not both. maybe do this as a precursor step to prediction but not as the preprocess pipeline
         "RACE",
         "ETHNICITY",
         "PCP_PROVIDER_TYPE",
