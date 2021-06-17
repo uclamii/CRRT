@@ -6,8 +6,8 @@ from typing import List
 from data.longitudinal_utils import aggregate_cat_feature
 
 # Just uncomment for the data_dir that makes sense for your machine
-DATA_DIR = "/home/davina/Private/dialysis-data"
-# DATA_DIR = r"C:\Users\arvin\Documents\ucla research\CRRT project"
+# DATA_DIR = "/home/davina/Private/dialysis-data"
+DATA_DIR = r"C:\Users\arvin\Documents\ucla research\CRRT project\data_files"
 
 
 def onehot(
@@ -54,7 +54,7 @@ def read_files_and_combine(
         try:
             # Try normally reading the csv with pandas, if it fails the formatting is strange
             df = pd.read_csv(os.path.join(DATA_DIR, file))
-        except IOError:
+        except:
             logging.warning(f"Unexpected encoding in {file}. Encoding with cp1252.")
             df = pd.read_csv(os.path.join(DATA_DIR, file), encoding="cp1252")
 

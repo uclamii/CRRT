@@ -97,22 +97,15 @@ def run_cv(
     cols = list(input_df.columns)
     patient_ids = input_df[patient_id_col].unique()
 
-    # for patients with multiple targets, pick max target for stratified splitting
-    # TODO: perhaps all patients with multiple targets should be changed to min target
+    # for patients with multiple targets, pick min target for stratified splitting
     patient_targets = [
-        max(list(input_df.loc[input_df[patient_id_col] == pid][target_col]))
+        min(list(input_df.loc[input_df[patient_id_col] == pid][target_col]))
         for pid in patient_ids
     ]
 
     # keep track of feature columns and real feature columns (for filling in missing values based on train data)
     feature_cols = [col for col in cols if col not in [target_col, patient_id_col]]
-    real_cols = [
-        "AGE",
-        "TOBACCO_PAK_PER_DY",
-        "TOBACCO_USED_YEARS",
-        "ALCOHOL_OZ_PER_WK",
-        "ILLICIT_DRUG_FREQ",
-    ] + [col for col in cols if ("VITAL_SIGN" in col) or ("RESULT" in col)]
+    real_cols = [col for col in cols if ("VITAL_SIGN" in col) or ("RESULT" in col) or ("CPT_SECTION" in col) or ("pr_CCS_COD" in col)]
     real_cols_indices = [i for i, col in enumerate(feature_cols) if col in real_cols]
 
     # cross-validation script
