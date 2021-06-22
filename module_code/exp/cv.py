@@ -159,6 +159,11 @@ def run_cv(
         feature_corrs = np.array(
             [pearsonr(X_train[:, col], y_train)[0] for col in range(X_train.shape[1])]
         )
+        # any features with constant input are defined as 0 correlation
+        nan_features = np.where(np.isnan(feature_corrs))
+        feature_corrs[nan_features] = 0
+        # get absolute value of correlations and get feature mask
+        feature_corrs = np.abs(feature_corrs)
         feature_mask = feature_corrs >= corr_thresh
 
         X_train = X_train[:, feature_mask]
