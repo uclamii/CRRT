@@ -60,7 +60,8 @@ algs = {
 def run_cv(
     input_df,
     alg="logistic",
-    corr_thresh=0.4,
+    corr_thresh=None,
+    top_n_fts=None,
     alg_kwargs=None,
     decision_thresh=0.5,
     patient_id_col="IP_PATIENT_ID",
@@ -77,6 +78,7 @@ def run_cv(
     input_df: pandas.DataFrame
     alg: str
     corr_thresh: float
+    top_n_fts: int
     alg_kwargs: dict
     decision_thresh: float
     patient_id_col: str
@@ -164,12 +166,17 @@ def run_cv(
         feature_corrs[nan_features] = 0
         # get absolute value of correlations and get feature mask
         feature_corrs = np.abs(feature_corrs)
-        feature_mask = feature_corrs >= corr_thresh
+        if isinstance(corr_thresh, float) and (0 < corr_thresh < 1):
+            feature_mask = feature_corrs >= corr_thresh
+        elif isinstance(top_n_fts, int) and (top_n_fts > 0):
+            feature_mask = feature_corrs.argsort()[-1 * top_n_fts:]
+        else:
+            raise ValueError("You need to define a correlation threshold or number of features!")
 
         X_train = X_train[:, feature_mask]
         X_test = X_test[:, feature_mask]
         print(
-            "(After filtering features by correlation) Array shapes - X_train: {}, X_test: {}".format(
+            "(After filtering features) Array shapes - X_train: {}, X_test: {}".format(
                 X_train.shape, X_test.shape
             )
         )
