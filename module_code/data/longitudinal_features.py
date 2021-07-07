@@ -1,5 +1,6 @@
 import logging
 import pandas as pd
+from typing import Dict
 
 from data.longitudinal_utils import (
     aggregate_cat_feature,
@@ -10,11 +11,14 @@ from data.utils import loading_message, read_files_and_combine
 
 from hcuppy.ccs import CCSEngine
 from hcuppy.cpt import CPT
+from data.longitudinal_utils import TIME_WINDOW
+
 
 
 def load_diagnoses(
     outcomes_df: pd.DataFrame,
     dx_file: str = "Encounter_Diagnoses_19-000093_10082020.txt",
+    time_window: Dict[str, int] = TIME_WINDOW
 ) -> pd.DataFrame:
     loading_message("Diagnoses")
     dx_df = read_files_and_combine([dx_file])
@@ -37,9 +41,8 @@ def load_diagnoses(
         ],
         hcuppy_converter_function=ce.get_ccs,
     )
-
     dx_feature = aggregate_cat_feature(
-        dx_df, agg_on="dx_CCS_CODE", outcomes_df=outcomes_df, time_col="DIAGNOSIS_DATE"
+        dx_df, agg_on="dx_CCS_CODE", outcomes_df=outcomes_df, time_col="DIAGNOSIS_DATE", time_window=time_window
     )
     return dx_feature
 
@@ -47,6 +50,7 @@ def load_diagnoses(
 def load_vitals(
     outcomes_df: pd.DataFrame,
     vitals_file: str = "Flowsheet_Vitals_19-000093_10082020.txt",
+    time_window: Dict[str, int] = TIME_WINDOW
 ) -> pd.DataFrame:
     loading_message("Vitals")
     vitals_df = read_files_and_combine([vitals_file])
@@ -66,13 +70,13 @@ def load_vitals(
 
     # convert to float
     vitals_df["VITAL_SIGN_VALUE"] = vitals_df["VITAL_SIGN_VALUE"].astype(float)
-
     vitals_feature = aggregate_ctn_feature(
         outcomes_df,
         vitals_df,
         agg_on="VITAL_SIGN_TYPE",
         agg_values_col="VITAL_SIGN_VALUE",
         time_col="VITAL_SIGN_TAKEN_TIME",
+        time_window=time_window
     )
 
     return vitals_feature
@@ -96,6 +100,7 @@ def split_sbp_and_dbp(vitals_df: pd.DataFrame) -> pd.DataFrame:
 
 def load_medications(
     outcomes_df: pd.DataFrame, rx_file: str = "meds.txt",
+    time_window: Dict[str, int] = TIME_WINDOW
 ) -> pd.DataFrame:
     """
     NOTE: The medications file originally was Medications_19-000093_10082020.txt
@@ -108,13 +113,14 @@ def load_medications(
     loading_message("Medications")
     rx_df = read_files_and_combine([rx_file])
     rx_feature = aggregate_cat_feature(
-        rx_df, agg_on="PHARM_SUBCLASS", outcomes_df=outcomes_df, time_col="ORDER_DATE"
+        rx_df, agg_on="PHARM_SUBCLASS", outcomes_df=outcomes_df, time_col="ORDER_DATE", time_window=time_window
     )
     return rx_feature
 
 
 def load_labs(
-    outcomes_df: pd.DataFrame, labs_file: str = "Labs_19-000093_10082020.txt"
+    outcomes_df: pd.DataFrame, labs_file: str = "Labs_19-000093_10082020.txt",
+    time_window: Dict[str, int] = TIME_WINDOW
 ) -> pd.DataFrame:
     loading_message("Labs")
     labs_df = read_files_and_combine([labs_file])
@@ -127,6 +133,7 @@ def load_labs(
         agg_on="DESCRIPTION",
         agg_values_col="RESULTS",
         time_col="ORDER_TIME",
+        time_window=time_window
     )
 
     return labs_feature
@@ -136,6 +143,7 @@ def load_problems(
     outcomes_df: pd.DataFrame,
     problems_file: str = "Problem_Lists_19-000093_10082020.txt",
     problems_dx_file: str = "problem_list_diagnoses_19-000093_10082020.txt",
+    time_window: Dict[str, int] = TIME_WINDOW
 ) -> pd.DataFrame:
     loading_message("Problems")
     problems_df = read_files_and_combine([problems_dx_file, problems_file])
@@ -165,6 +173,7 @@ def load_problems(
         agg_on="pr_CCS_CODE",
         outcomes_df=outcomes_df,
         time_col="NOTED_DATE",
+        time_window=time_window
     )
 
     return problems_feature
@@ -173,6 +182,7 @@ def load_problems(
 def load_procedures(
     outcomes_df: pd.DataFrame,
     procedures_file: str = "Procedures_19-000093_10082020.txt",
+    time_window: Dict[str, int] = TIME_WINDOW
 ) -> pd.DataFrame:
     loading_message("Procedures")
     procedures_df = read_files_and_combine([procedures_file])
@@ -191,6 +201,7 @@ def load_procedures(
         agg_on="CPT_SECTION",
         outcomes_df=outcomes_df,
         time_col="PROC_DATE",
+        time_window=time_window,
     )
 
     return procedures_feature

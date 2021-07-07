@@ -89,7 +89,7 @@ def run_cv(
 
     Returns
     -------
-    dict
+    tuple
 
     """
     # shuffle df
@@ -105,14 +105,17 @@ def run_cv(
         for pid in patient_ids
     ]
 
-    # keep track of feature columns and real feature columns (for filling in missing values based on train data)
+    # keep track of feature columns and real/cat feature columns (for filling in missing values based on train data)
     feature_cols = [col for col in cols if col not in [target_col, patient_id_col]]
     real_cols = [col for col in cols if ("VITAL_SIGN" in col) or ("RESULT" in col) or ("CPT_SECTION" in col) or ("pr_CCS_COD" in col)]
     real_cols_indices = [i for i, col in enumerate(feature_cols) if col in real_cols]
+    cat_cols_indices = [i for i, col in enumerate(feature_cols) if col not in real_cols]
 
     # cross-validation script
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     metric_scores = {metric: [] for metric in eval_metrics}
+    fold_models = []
+    used_features = []
     for i, (train_index, test_index) in enumerate(
         skf.split(patient_ids, patient_targets)
     ):
@@ -132,6 +135,23 @@ def run_cv(
             train_df[target_col].to_numpy(),
             test_df[target_col].to_numpy(),
         )
+        # fill missing values as 0 for cat features
+        X_train_cat = X_train[:, cat_cols_indices]
+        nan_train_inds = np.where(np.isnan(X_train_cat))
+        X_train_cat[nan_train_inds] = 0
+        # any columns with all zero are set to 0
+        nan_train_inds_ = np.where(np.isnan(X_train_cat))
+        X_train_cat[nan_train_inds_] = 0
+        X_train[:, cat_cols_indices] = X_train_cat
+
+        # do the same for test
+        X_test_cat = X_test[:, cat_cols_indices]
+        nan_test_inds = np.where(np.isnan(X_test_cat))
+        X_test_cat[nan_test_inds] = 0
+        # any columns with all zero from train are set to 0 in test
+        nan_test_inds_ = np.where(np.isnan(X_test_cat))
+        X_test_cat[nan_test_inds_] = 0
+        X_test[:, cat_cols_indices] = X_test_cat
 
         # fill missing values with mean for real features. get fill values from train, fill train/test
         # from https://stackoverflow.com/questions/18689235/numpy-array-replace-nan-values-with-average-of-columns
@@ -144,6 +164,7 @@ def run_cv(
         X_train_real[nan_train_inds_] = 0
         X_train[:, real_cols_indices] = X_train_real
 
+        # do the same for test
         X_test_real = X_test[:, real_cols_indices]
         nan_test_inds = np.where(np.isnan(X_test_real))
         X_test_real[nan_test_inds] = np.take(real_fill_values, nan_test_inds[1])
@@ -151,6 +172,7 @@ def run_cv(
         nan_test_inds_ = np.where(np.isnan(X_test_real))
         X_test_real[nan_test_inds_] = 0
         X_test[:, real_cols_indices] = X_test_real
+
         print(
             "Array shapes - X_train: {}, X_test: {}, y_train: {}, y_test: {}".format(
                 X_train.shape, X_test.shape, y_train.shape, y_test.shape
@@ -166,10 +188,15 @@ def run_cv(
         feature_corrs[nan_features] = 0
         # get absolute value of correlations and get feature mask
         feature_corrs = np.abs(feature_corrs)
-        if isinstance(corr_thresh, float) and (0 < corr_thresh < 1):
+        if isinstance(corr_thresh, float) and (0 <= corr_thresh < 1):
             feature_mask = feature_corrs >= corr_thresh
+            feature_names = [feature_name for feature_mask_val, feature_name in zip(feature_mask, feature_cols)
+                             if feature_mask_val]
+            used_features.append(feature_names)
         elif isinstance(top_n_fts, int) and (top_n_fts > 0):
             feature_mask = feature_corrs.argsort()[-1 * top_n_fts:]
+            feature_names = [feature_cols[i] for i in feature_mask]
+            used_features.append(feature_names)
         else:
             raise ValueError("You need to define a correlation threshold or number of features!")
 
@@ -180,7 +207,6 @@ def run_cv(
                 X_train.shape, X_test.shape
             )
         )
-
         print("Fitting model")
         if alg_kwargs:
             clf = algs[alg](**alg_kwargs)
@@ -195,6 +221,9 @@ def run_cv(
             metric_fn = metrics[metric]
             metric_score = metric_fn(y_test, pred_probs, decision_thresh)
             metric_scores[metric].append(metric_score)
+
+        fold_models.append(clf)
+
     print("Done!")
     for metric in metric_scores.keys():
         scores = np.array(metric_scores[metric])
@@ -206,4 +235,4 @@ def run_cv(
             )
         )
 
-    return metric_scores
+    return metric_scores, fold_models, used_features

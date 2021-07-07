@@ -1,7 +1,8 @@
 from functools import reduce
 import os
-from typing import List
 import pandas as pd
+from data.longitudinal_utils import TIME_WINDOW
+from typing import Dict, List
 
 from data.longitudinal_features import (
     load_diagnoses,
@@ -112,7 +113,7 @@ def map_provider_id_to_type(
     return static_df
 
 
-def merge_features_with_outcome() -> pd.DataFrame:
+def merge_features_with_outcome(time_window: Dict[str, int] = TIME_WINDOW) -> pd.DataFrame:
     """
     Loads outcomes and features and then merges them.
     Keeps patients even if they're missing from a data table (Feature).
@@ -123,12 +124,12 @@ def merge_features_with_outcome() -> pd.DataFrame:
 
     static_df = load_static_features()
     longitudinal_dfs = [
-        load_diagnoses(outcomes_df=outcomes_df),
-        load_vitals(outcomes_df=outcomes_df),
-        load_medications(outcomes_df=outcomes_df),
-        load_labs(outcomes_df=outcomes_df),
-        load_problems(outcomes_df=outcomes_df),
-        load_procedures(outcomes_df=outcomes_df),
+        load_diagnoses(outcomes_df=outcomes_df, time_window=time_window),
+        load_vitals(outcomes_df=outcomes_df, time_window=time_window),
+        load_medications(outcomes_df=outcomes_df, time_window=time_window),
+        load_labs(outcomes_df=outcomes_df, time_window=time_window),
+        load_problems(outcomes_df=outcomes_df, time_window=time_window),
+        load_procedures(outcomes_df=outcomes_df, time_window=time_window),
     ]
 
     # outer join features with each other so patients who might not have allergies,  for example, are still included
