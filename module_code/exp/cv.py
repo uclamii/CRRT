@@ -6,6 +6,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
+from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 from sklearn.metrics import (
     roc_auc_score,
     brier_score_loss,
@@ -53,7 +55,9 @@ algs = {
     "knn": KNeighborsClassifier,
     "naive_bayes": MultinomialNB,
     "decision_tree": DecisionTreeClassifier,
-    "random_forrest": RandomForestClassifier,
+    "random_forest": RandomForestClassifier,
+    "lgb": LGBMClassifier,
+    "xgb": XGBClassifier
 }
 
 
