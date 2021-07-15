@@ -46,6 +46,18 @@ metrics = {
     "conf_matrix": lambda gt, pred_probs, decision_thresh: confusion_matrix(
         gt, (pred_probs >= decision_thresh).astype(int)
     ),
+    "TN": lambda gt, pred_probs, decision_thresh: confusion_matrix(
+        gt, (pred_probs >= decision_thresh).astype(int)
+    )[0, 0],
+    "FN": lambda gt, pred_probs, decision_thresh: confusion_matrix(
+        gt, (pred_probs >= decision_thresh).astype(int)
+    )[1, 0],
+    "TP": lambda gt, pred_probs, decision_thresh: confusion_matrix(
+        gt, (pred_probs >= decision_thresh).astype(int)
+    )[1, 1],
+    "FP": lambda gt, pred_probs, decision_thresh: confusion_matrix(
+        gt, (pred_probs >= decision_thresh).astype(int)
+    )[0, 1],
 }
 
 
@@ -229,7 +241,9 @@ def run_cv(
         fold_models.append(clf)
 
     print("Done!")
-    for metric in metric_scores.keys():
+    mean_metric_scores = {}
+    std_metric_scores = {}
+    for metric in eval_metrics:
         scores = np.array(metric_scores[metric])
         print(
             "{}: mean: {}+/-{}".format(
@@ -238,5 +252,11 @@ def run_cv(
                 np.round(np.std(scores, axis=0), 4),
             )
         )
+        mean_metric_scores[metric + "_mean"] = np.round(np.mean(scores, axis=0), 4)
+        std_metric_scores[metric + "_std"] = np.round(np.std(scores, axis=0), 4)
 
-    return metric_scores, fold_models, used_features
+    return {"fold_scores": metric_scores,
+            "mean_scores": mean_metric_scores,
+            "std_scores": std_metric_scores,
+            "fold_models": fold_models,
+            "fold_features": used_features}
