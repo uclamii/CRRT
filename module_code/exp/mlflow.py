@@ -14,4 +14,5 @@ def generate_mlFlowReport(
         results_dict = run_cv(**cv_kwargs)
         mlflow.log_metrics(results_dict['mean_scores'])
         mlflow.log_metrics(results_dict['std_scores'])
+    return results_dict
 
