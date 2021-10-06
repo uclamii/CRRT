@@ -1,5 +1,5 @@
 from functools import reduce
-import os
+from os.path import join
 import pandas as pd
 from data.longitudinal_utils import TIME_WINDOW
 from typing import Dict, List
@@ -13,7 +13,6 @@ from data.longitudinal_features import (
     load_procedures,
 )
 from data.utils import (
-    DATA_DIR,
     loading_message,
     onehot,
     read_files_and_combine,
@@ -21,7 +20,7 @@ from data.utils import (
 
 
 def load_outcomes(
-    outcome_file: str = "CRRT Deidentified 2017-2019.csv",
+    raw_data_dir: str, outcome_file: str = "CRRT Deidentified 2017-2019.csv",
 ) -> pd.DataFrame:
     """
     Load outcomes from outcomes file.
@@ -30,7 +29,7 @@ def load_outcomes(
     """
 
     loading_message("Outcomes")
-    outcomes_df = pd.read_csv(f"{DATA_DIR}/{outcome_file}")
+    outcomes_df = pd.read_csv(join(raw_data_dir, outcome_file))
 
     positive_outcomes = ["Recov. renal funct.", "Transitioned to HD"]
     negative_outcomes = ["Palliative Care", "Expired "]
@@ -56,6 +55,7 @@ def load_outcomes(
 
 
 def load_static_features(
+    raw_data_dir: str,
     static_features: List[str] = (
         "Allergies_19-000093_10082020.txt",
         "Patient_Demographics_19-000093_10082020.txt",
@@ -65,8 +65,8 @@ def load_static_features(
     loading_message("Static Features")
     """Returns static features dataframe. 1 row per patient."""
     # include all patients from all tables, so outer join
-    static_df = read_files_and_combine(static_features, how="outer")
-    static_df = map_provider_id_to_type(static_df)
+    static_df = read_files_and_combine(static_features, raw_data_dir, how="outer")
+    static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
     # TODO: only do this if file doesn't exist
     # save description of allergen code as a df mapping
@@ -74,7 +74,7 @@ def load_static_features(
         ["ALLERGEN_ID", "DESCRIPTION"]
     ].set_index("ALLERGEN_ID")
     allergen_code_to_description_mapping.to_csv(
-        os.path.join(DATA_DIR, "allergen_code_mapping.csv")
+        join(raw_data_dir, "allergen_code_mapping.csv")
     )
     # drop allergen description since we won't be using it
     static_df.drop("DESCRIPTION", axis=1)
@@ -99,10 +99,11 @@ def load_static_features(
 
 def map_provider_id_to_type(
     static_df: pd.DataFrame,
+    raw_data_dir: str,
     provider_mapping_file: str = "providers_19-000093_10082020.txt",
 ) -> pd.DataFrame:
     """There are a bunch of IDs but they mostly all map to the same type, so here we'll use the string name instead of code."""
-    provider_mapping = pd.read_csv(f"{DATA_DIR}/{provider_mapping_file}")
+    provider_mapping = pd.read_csv(join(raw_data_dir, provider_mapping_file))
     provider_mapping = dict(
         zip(provider_mapping["IP_PROVIDER_ID"], provider_mapping["PROVIDER_TYPE"])
     )
@@ -113,23 +114,25 @@ def map_provider_id_to_type(
     return static_df
 
 
-def merge_features_with_outcome(time_window: Dict[str, int] = TIME_WINDOW) -> pd.DataFrame:
+def merge_features_with_outcome(
+    raw_data_dir: str, time_window: Dict[str, int] = TIME_WINDOW
+) -> pd.DataFrame:
     """
     Loads outcomes and features and then merges them.
     Keeps patients even if they're missing from a data table (Feature).
     Will drop patients who are missing outcomes.
     """
 
-    outcomes_df = load_outcomes()
+    outcomes_df = load_outcomes(raw_data_dir)
 
-    static_df = load_static_features()
+    static_df = load_static_features(raw_data_dir)
     longitudinal_dfs = [
-        load_diagnoses(outcomes_df=outcomes_df, time_window=time_window),
-        load_vitals(outcomes_df=outcomes_df, time_window=time_window),
-        load_medications(outcomes_df=outcomes_df, time_window=time_window),
-        load_labs(outcomes_df=outcomes_df, time_window=time_window),
-        load_problems(outcomes_df=outcomes_df, time_window=time_window),
-        load_procedures(outcomes_df=outcomes_df, time_window=time_window),
+        load_diagnoses(outcomes_df, raw_data_dir, time_window=time_window),
+        load_vitals(outcomes_df, raw_data_dir, time_window=time_window),
+        load_medications(outcomes_df, raw_data_dir, time_window=time_window),
+        load_labs(outcomes_df, raw_data_dir, time_window=time_window),
+        load_problems(outcomes_df, raw_data_dir, time_window=time_window),
+        load_procedures(outcomes_df, raw_data_dir, time_window=time_window),
     ]
 
     # outer join features with each other so patients who might not have allergies,  for example, are still included

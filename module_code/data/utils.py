@@ -5,10 +5,6 @@ from functools import reduce
 from typing import List
 from data.longitudinal_utils import aggregate_cat_feature
 
-# Just uncomment for the data_dir that makes sense for your machine
-# DATA_DIR = "/home/davina/Private/dialysis-data"
-DATA_DIR = r"C:\Users\arvin\Documents\ucla research\CRRT project\data_files"
-
 
 def onehot(
     df: pd.DataFrame, cols_to_onehot: List[str], sum_across_patient: bool = False,
@@ -42,7 +38,10 @@ def loading_message(what_is_loading: str) -> None:
 
 
 def read_files_and_combine(
-    files: List[str], on: List[str] = ["IP_PATIENT_ID"], how: str = "inner"
+    files: List[str],
+    raw_data_dir: str,
+    on: List[str] = ["IP_PATIENT_ID"],
+    how: str = "inner",
 ) -> pd.DataFrame:
     """
     Takes one or more files in a list and returns a combined dataframe.
@@ -53,10 +52,10 @@ def read_files_and_combine(
     for file in files:
         try:
             # Try normally reading the csv with pandas, if it fails the formatting is strange
-            df = pd.read_csv(os.path.join(DATA_DIR, file))
+            df = pd.read_csv(os.path.join(raw_data_dir, file))
         except:
             logging.warning(f"Unexpected encoding in {file}. Encoding with cp1252.")
-            df = pd.read_csv(os.path.join(DATA_DIR, file), encoding="cp1252")
+            df = pd.read_csv(os.path.join(raw_data_dir, file), encoding="cp1252")
 
         # Enforce all caps column names
         dfs.append(df.set_axis(df.columns.str.upper(), axis=1))

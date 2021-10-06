@@ -32,8 +32,11 @@ def time_window_mask(
     # Mask: keep entries for feature with a date within time_window years and months from end date of outcome
     mask = dates >= (
         end_date
-        - timedelta(days=360 * time_window.get("YEARS", 0) + 30 * time_window.get("MONTHS", 0) + time_window.get("DAYS",
-                                                                                                                 0))
+        - timedelta(
+            days=360 * time_window.get("YEARS", 0)
+            + 30 * time_window.get("MONTHS", 0)
+            + time_window.get("DAYS", 0)
+        )
     )
 
     logging.info(f"Dropping {df.shape[0] - sum(mask)} rows outside of time window.")

@@ -14,14 +14,14 @@ from hcuppy.cpt import CPT
 from data.longitudinal_utils import TIME_WINDOW
 
 
-
 def load_diagnoses(
     outcomes_df: pd.DataFrame,
+    raw_data_dir: str,
     dx_file: str = "Encounter_Diagnoses_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW
+    time_window: Dict[str, int] = TIME_WINDOW,
 ) -> pd.DataFrame:
     loading_message("Diagnoses")
-    dx_df = read_files_and_combine([dx_file])
+    dx_df = read_files_and_combine([dx_file], raw_data_dir)
 
     # convert icd10 to ccs to reduce number of categories for diagnoses.
     ce = CCSEngine(mode="dx")
@@ -42,18 +42,23 @@ def load_diagnoses(
         hcuppy_converter_function=ce.get_ccs,
     )
     dx_feature = aggregate_cat_feature(
-        dx_df, agg_on="dx_CCS_CODE", outcomes_df=outcomes_df, time_col="DIAGNOSIS_DATE", time_window=time_window
+        dx_df,
+        agg_on="dx_CCS_CODE",
+        outcomes_df=outcomes_df,
+        time_col="DIAGNOSIS_DATE",
+        time_window=time_window,
     )
     return dx_feature
 
 
 def load_vitals(
     outcomes_df: pd.DataFrame,
+    raw_data_dir: str,
     vitals_file: str = "Flowsheet_Vitals_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW
+    time_window: Dict[str, int] = TIME_WINDOW,
 ) -> pd.DataFrame:
     loading_message("Vitals")
-    vitals_df = read_files_and_combine([vitals_file])
+    vitals_df = read_files_and_combine([vitals_file], raw_data_dir)
     vitals_df = split_sbp_and_dbp(vitals_df)
 
     # drop duplicates for the same patient for the same vital (taken at same time indicates duplicate)
@@ -76,7 +81,7 @@ def load_vitals(
         agg_on="VITAL_SIGN_TYPE",
         agg_values_col="VITAL_SIGN_VALUE",
         time_col="VITAL_SIGN_TAKEN_TIME",
-        time_window=time_window
+        time_window=time_window,
     )
 
     return vitals_feature
@@ -99,8 +104,10 @@ def split_sbp_and_dbp(vitals_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_medications(
-    outcomes_df: pd.DataFrame, rx_file: str = "meds.txt",
-    time_window: Dict[str, int] = TIME_WINDOW
+    outcomes_df: pd.DataFrame,
+    raw_data_dir: str,
+    rx_file: str = "meds.txt",
+    time_window: Dict[str, int] = TIME_WINDOW,
 ) -> pd.DataFrame:
     """
     NOTE: The medications file originally was Medications_19-000093_10082020.txt
@@ -111,19 +118,25 @@ def load_medications(
     This would reduce us to: 99, 18, and 459 extra flags for medications respectively.
     """
     loading_message("Medications")
-    rx_df = read_files_and_combine([rx_file])
+    rx_df = read_files_and_combine([rx_file], raw_data_dir)
     rx_feature = aggregate_cat_feature(
-        rx_df, agg_on="PHARM_SUBCLASS", outcomes_df=outcomes_df, time_col="ORDER_DATE", time_window=time_window
+        rx_df,
+        agg_on="PHARM_SUBCLASS",
+        outcomes_df=outcomes_df,
+        time_col="ORDER_DATE",
+        time_window=time_window,
     )
     return rx_feature
 
 
 def load_labs(
-    outcomes_df: pd.DataFrame, labs_file: str = "Labs_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW
+    outcomes_df: pd.DataFrame,
+    raw_data_dir: str,
+    labs_file: str = "Labs_19-000093_10082020.txt",
+    time_window: Dict[str, int] = TIME_WINDOW,
 ) -> pd.DataFrame:
     loading_message("Labs")
-    labs_df = read_files_and_combine([labs_file])
+    labs_df = read_files_and_combine([labs_file], raw_data_dir)
     # Force numeric, ignore strings
     labs_df["RESULTS"] = pd.to_numeric(labs_df["RESULTS"], errors="coerce")
 
@@ -133,7 +146,7 @@ def load_labs(
         agg_on="DESCRIPTION",
         agg_values_col="RESULTS",
         time_col="ORDER_TIME",
-        time_window=time_window
+        time_window=time_window,
     )
 
     return labs_feature
@@ -141,12 +154,15 @@ def load_labs(
 
 def load_problems(
     outcomes_df: pd.DataFrame,
+    raw_data_dir: str,
     problems_file: str = "Problem_Lists_19-000093_10082020.txt",
     problems_dx_file: str = "problem_list_diagnoses_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW
+    time_window: Dict[str, int] = TIME_WINDOW,
 ) -> pd.DataFrame:
     loading_message("Problems")
-    problems_df = read_files_and_combine([problems_dx_file, problems_file])
+    problems_df = read_files_and_combine(
+        [problems_dx_file, problems_file], raw_data_dir
+    )
     problems_df.columns = [col.upper() for col in problems_df.columns]
 
     # convert icd10 to ccs only to active problems
@@ -173,7 +189,7 @@ def load_problems(
         agg_on="pr_CCS_CODE",
         outcomes_df=outcomes_df,
         time_col="NOTED_DATE",
-        time_window=time_window
+        time_window=time_window,
     )
 
     return problems_feature
@@ -181,11 +197,12 @@ def load_problems(
 
 def load_procedures(
     outcomes_df: pd.DataFrame,
+    raw_data_dir: str,
     procedures_file: str = "Procedures_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW
+    time_window: Dict[str, int] = TIME_WINDOW,
 ) -> pd.DataFrame:
     loading_message("Procedures")
-    procedures_df = read_files_and_combine([procedures_file])
+    procedures_df = read_files_and_combine([procedures_file], raw_data_dir)
 
     # Convert CPT codes to their sections (less granular)
     cpt = CPT()
