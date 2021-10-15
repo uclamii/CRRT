@@ -5,8 +5,15 @@ import pandas as pd
 from scipy.stats import skew
 from datetime import timedelta
 
+UNIVERSAL_TIME_COL_NAME = "DATE"
+
 # For continuous valued repeated measurements, how to aggregate across a window of time
-AGGREGATE_FUNCTIONS = [min, max, np.mean, np.std, skew, len]
+def std(df: pd.DataFrame) -> float:
+    """pd.agg: np.std does not work properly if passed directly."""
+    return np.std(df)
+
+
+AGGREGATE_FUNCTIONS = [min, max, np.mean, std, skew, len]
 
 # What window of time to limit our analysis to (relative to end date of outcome)
 TIME_BEFORE_START_DATE = {"YEARS": 0, "MONTHS": 0, "DAYS": 14}
@@ -85,7 +92,7 @@ def aggregate_cat_feature(
     Aggregate a categorical feature. Basically "Bag of words".
     Will onehot encode, and sum up occurrences for a given patient for a given time window (if given, else all time points) over each time interval.
     Time window is traditionally time_before_start_date -> start_date.
-    Time interval comes from the pd.resample (e.g. "1D" is daily.)
+    Time interval comes from the pd.resample/pd.Grouper (e.g. "1D" is daily.)
     """
     if time_col:
         # Enforce date columnn is a datetime object
@@ -104,20 +111,22 @@ def aggregate_cat_feature(
     cat_feature = pd.get_dummies(cat_df[cat_df_cols], columns=[agg_on])
 
     # Sum across a patient and per time interval (if specified) over a whole time window
-    cat_feature_grouped = cat_feature.groupby("IP_PATIENT_ID")
-    # resample by time interval if exists
+    group_by = ["IP_PATIENT_ID"]
+    # chunk by time interval if exists
     if time_interval and time_col:
         # Uniform date column name if aggregating by time_interval
-        cat_feature.rename(columns={time_col: "DATE"}, inplace=True)
-        cat_feature_grouped = cat_feature_grouped.resample(time_interval, on="DATE")
+        cat_feature.rename(columns={time_col: UNIVERSAL_TIME_COL_NAME}, inplace=True)
+        # use with pd.Grouper instead of resample
+        # Ref: https://stackoverflow.com/a/32012129/1888794
+        group_by.append(pd.Grouper(key=UNIVERSAL_TIME_COL_NAME, freq=time_interval))
 
-    return cat_feature_grouped.sum()
+    return cat_feature.groupby(group_by).sum()
 
 
 def aggregate_ctn_feature(
     outcomes_df: pd.DataFrame,
     ctn_df: pd.DataFrame,
-    agg_on: str,
+    agg_on: str,  # specify what is the name of the value (e.g. sbp vs dbp)
     agg_values_col: str,
     time_col: str,
     time_interval: Optional[str] = None,
@@ -138,27 +147,28 @@ def aggregate_ctn_feature(
         outcomes_df, ctn_df, time_col, time_before_start_date, time_window_end
     )
 
-    # Apply aggregate functions (within time window)
-    # reset index due to strange error from mask:
-    # https://github.com/pandas-dev/pandas/issues/35275#issuecomment-658208648
-    ctn_feature_grouped = ctn_df.reset_index().groupby(
-        ["IP_PATIENT_ID", agg_on, time_col]
+    # Sum across a patient and per time interval (if specified) over a whole time window per feature
+    group_by = ["IP_PATIENT_ID"]
+    # chunk by time interval if exists
+    if time_interval:
+        # Uniform date column name if aggregating by time_interval
+        ctn_df.rename(columns={time_col: UNIVERSAL_TIME_COL_NAME}, inplace=True)
+        # use with pd.Grouper instead of resample
+        # Ref: https://stackoverflow.com/a/32012129/1888794
+        group_by.append(pd.Grouper(key=UNIVERSAL_TIME_COL_NAME, freq=time_interval))
+    group_by.append(agg_on)
+
+    # index: [ID, time(?), agg_on], columns: [agg_values_col: [agg_fns]]
+    ctn_feature = (
+        ctn_df.groupby(group_by)
+        .agg({agg_values_col: AGGREGATE_FUNCTIONS})
+        .droplevel(0, axis=1)  # want to just keep AGG_FN names
     )
-    # resample by time interval if exists
-    if time_interval:
-        ctn_feature_grouped = ctn_feature_grouped.resample(time_interval, on=time_col)
-    # apply all aggregate functions to the target values column
-    ctn_feature = ctn_feature_grouped.agg({agg_values_col: AGGREGATE_FUNCTIONS})
-    # by resampling by day / etc it will create a duplicate time_col, get rid of granular version
-    # Does nothing if not resampling by time interval
-    ctn_feature.reset_index(level=2, drop=True, inplace=True)
 
-    # unstack at the agg_values_col instead of time_col (level=2, after dropping dup)
-    ctn_feature = ctn_feature.unstack(level=1)
+    # stack:=  index: [id, time(?), agg_on, agg_fn]
+    # unstack: 1st agg_on names (e.g. sbp dbp) (level -2 in index)
+    # then under that, agg_fn (level -1 in index)
+    ctn_feature = ctn_feature.stack().unstack([-2, -1])
     ctn_feature.columns = ctn_feature.columns.map("_".join)
-    ctn_feature.reset_index(inplace=True)
 
-    # Uniform date column if aggregating by time_interval
-    if time_interval:
-        ctn_feature.rename(columns={time_col: "DATE"}, inplace=True)
     return ctn_feature

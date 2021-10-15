@@ -12,7 +12,7 @@ from data.longitudinal_features import (
     load_problems,
     load_procedures,
 )
-from data.longitudinal_utils import TIME_BEFORE_START_DATE
+from data.longitudinal_utils import TIME_BEFORE_START_DATE, UNIVERSAL_TIME_COL_NAME
 from data.utils import (
     loading_message,
     onehot,
@@ -184,14 +184,27 @@ def merge_features_with_outcome(
         ),
     ]
 
+    merge_on = (
+        ["IP_PATIENT_ID", UNIVERSAL_TIME_COL_NAME] if time_interval else "IP_PATIENT_ID"
+    )
+
     # outer join features with each other so patients who might not have allergies,  for example, are still included
     features = reduce(
-        lambda df1, df2: pd.merge(df1, df2, on="IP_PATIENT_ID", how="outer"),
-        longitudinal_dfs + [static_df],
+        lambda df1, df2: pd.merge(df1, df2, on=merge_on, how="outer"), longitudinal_dfs
+    )
+    # join with static data, (outer join for same reason)
+    # merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast
+    features = features.join(static_df, how="outer")
+
+    # some de-identified IDs missing (NaN), some people with multiple outcomes
+    # TODO: decide what to do with multiple outcomes
+    working_outcomes_df = (
+        outcomes_df.dropna(subset=["IP_PATIENT_ID"])
+        .drop_duplicates(subset=["IP_PATIENT_ID"], keep="first")
+        .set_index("IP_PATIENT_ID")
     )
     # inner join features with outcomes (only patients with outcomes)
-    features_with_outcomes = pd.merge(
-        features, outcomes_df, on="IP_PATIENT_ID", how="inner"
-    )
+    # merge is incorrect here for the same reason as static
+    features_with_outcomes = features.join(working_outcomes_df, how="inner")
 
     return features_with_outcomes
