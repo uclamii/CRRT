@@ -1,8 +1,8 @@
 from functools import reduce
 from os.path import join
 import pandas as pd
-from data.longitudinal_utils import TIME_WINDOW
-from typing import Dict, List
+from typing import Dict, List, Optional
+from datetime import timedelta
 
 from data.longitudinal_features import (
     load_diagnoses,
@@ -12,6 +12,7 @@ from data.longitudinal_features import (
     load_problems,
     load_procedures,
 )
+from data.longitudinal_utils import TIME_BEFORE_START_DATE
 from data.utils import (
     loading_message,
     onehot,
@@ -50,6 +51,15 @@ def load_outcomes(
     # Recommend CRRT if they had a positive outcome.
     recommend_crrt = (outcomes_df[positive_outcomes] == 1).any(axis=1)
     outcomes_df["recommend_crrt"] = recommend_crrt.astype(int)
+
+    #### Construct Start Date ####  -- For convenience of time-windows --
+    # Enforce date column to datetime object
+    outcomes_df["End Date"] = pd.to_datetime(outcomes_df["End Date"])
+
+    # CRRT Start Date = End Date - (Days on CRRT - 1)
+    # e.g. finish on the 10th and 3 days of CRRT: 8th (1), 9th (2), 10th (3)
+    offset = outcomes_df["CRRT Total Days"].map(lambda days: timedelta(days=days - 1))
+    outcomes_df["Start Date"] = outcomes_df["End Date"] - offset
 
     return outcomes_df
 
@@ -115,7 +125,10 @@ def map_provider_id_to_type(
 
 
 def merge_features_with_outcome(
-    raw_data_dir: str, time_window: Dict[str, int] = TIME_WINDOW
+    raw_data_dir: str,
+    time_interval: Optional[str] = None,
+    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
+    time_window_end: str = "Start Date",
 ) -> pd.DataFrame:
     """
     Loads outcomes and features and then merges them.
@@ -127,12 +140,48 @@ def merge_features_with_outcome(
 
     static_df = load_static_features(raw_data_dir)
     longitudinal_dfs = [
-        load_diagnoses(outcomes_df, raw_data_dir, time_window=time_window),
-        load_vitals(outcomes_df, raw_data_dir, time_window=time_window),
-        load_medications(outcomes_df, raw_data_dir, time_window=time_window),
-        load_labs(outcomes_df, raw_data_dir, time_window=time_window),
-        load_problems(outcomes_df, raw_data_dir, time_window=time_window),
-        load_procedures(outcomes_df, raw_data_dir, time_window=time_window),
+        load_diagnoses(
+            outcomes_df,
+            raw_data_dir,
+            time_interval=time_interval,
+            time_before_start_date=time_before_start_date,
+            time_window_end=time_window_end,
+        ),
+        load_vitals(
+            outcomes_df,
+            raw_data_dir,
+            time_interval=time_interval,
+            time_before_start_date=time_before_start_date,
+            time_window_end=time_window_end,
+        ),
+        load_medications(
+            outcomes_df,
+            raw_data_dir,
+            time_interval=time_interval,
+            time_before_start_date=time_before_start_date,
+            time_window_end=time_window_end,
+        ),
+        load_labs(
+            outcomes_df,
+            raw_data_dir,
+            time_interval=time_interval,
+            time_before_start_date=time_before_start_date,
+            time_window_end=time_window_end,
+        ),
+        load_problems(
+            outcomes_df,
+            raw_data_dir,
+            time_interval=time_interval,
+            time_before_start_date=time_before_start_date,
+            time_window_end=time_window_end,
+        ),
+        load_procedures(
+            outcomes_df,
+            raw_data_dir,
+            time_interval=time_interval,
+            time_before_start_date=time_before_start_date,
+            time_window_end=time_window_end,
+        ),
     ]
 
     # outer join features with each other so patients who might not have allergies,  for example, are still included

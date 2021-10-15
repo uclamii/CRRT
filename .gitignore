@@ -1,3 +1,6 @@
+# Ignore the params we set to do each run
+options.yml 
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

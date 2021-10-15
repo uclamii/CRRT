@@ -1,6 +1,6 @@
 import logging
 import pandas as pd
-from typing import Dict
+from typing import Dict, Optional
 
 from data.longitudinal_utils import (
     aggregate_cat_feature,
@@ -11,14 +11,16 @@ from data.utils import loading_message, read_files_and_combine
 
 from hcuppy.ccs import CCSEngine
 from hcuppy.cpt import CPT
-from data.longitudinal_utils import TIME_WINDOW
+from data.longitudinal_utils import TIME_BEFORE_START_DATE
 
 
 def load_diagnoses(
     outcomes_df: pd.DataFrame,
     raw_data_dir: str,
     dx_file: str = "Encounter_Diagnoses_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW,
+    time_interval: Optional[str] = None,
+    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
+    time_window_end: str = "Start Date",
 ) -> pd.DataFrame:
     loading_message("Diagnoses")
     dx_df = read_files_and_combine([dx_file], raw_data_dir)
@@ -46,7 +48,9 @@ def load_diagnoses(
         agg_on="dx_CCS_CODE",
         outcomes_df=outcomes_df,
         time_col="DIAGNOSIS_DATE",
-        time_window=time_window,
+        time_interval=time_interval,
+        time_before_start_date=time_before_start_date,
+        time_window_end=time_window_end,
     )
     return dx_feature
 
@@ -55,7 +59,9 @@ def load_vitals(
     outcomes_df: pd.DataFrame,
     raw_data_dir: str,
     vitals_file: str = "Flowsheet_Vitals_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW,
+    time_interval: Optional[str] = None,
+    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
+    time_window_end: str = "Start Date",
 ) -> pd.DataFrame:
     loading_message("Vitals")
     vitals_df = read_files_and_combine([vitals_file], raw_data_dir)
@@ -81,7 +87,9 @@ def load_vitals(
         agg_on="VITAL_SIGN_TYPE",
         agg_values_col="VITAL_SIGN_VALUE",
         time_col="VITAL_SIGN_TAKEN_TIME",
-        time_window=time_window,
+        time_interval=time_interval,
+        time_before_start_date=time_before_start_date,
+        time_window_end=time_window_end,
     )
 
     return vitals_feature
@@ -107,7 +115,9 @@ def load_medications(
     outcomes_df: pd.DataFrame,
     raw_data_dir: str,
     rx_file: str = "meds.txt",
-    time_window: Dict[str, int] = TIME_WINDOW,
+    time_interval: Optional[str] = None,
+    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
+    time_window_end: str = "Start Date",
 ) -> pd.DataFrame:
     """
     NOTE: The medications file originally was Medications_19-000093_10082020.txt
@@ -124,7 +134,9 @@ def load_medications(
         agg_on="PHARM_SUBCLASS",
         outcomes_df=outcomes_df,
         time_col="ORDER_DATE",
-        time_window=time_window,
+        time_interval=time_interval,
+        time_before_start_date=time_before_start_date,
+        time_window_end=time_window_end,
     )
     return rx_feature
 
@@ -133,7 +145,9 @@ def load_labs(
     outcomes_df: pd.DataFrame,
     raw_data_dir: str,
     labs_file: str = "Labs_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW,
+    time_interval: Optional[str] = None,
+    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
+    time_window_end: str = "Start Date",
 ) -> pd.DataFrame:
     loading_message("Labs")
     labs_df = read_files_and_combine([labs_file], raw_data_dir)
@@ -146,7 +160,9 @@ def load_labs(
         agg_on="DESCRIPTION",
         agg_values_col="RESULTS",
         time_col="ORDER_TIME",
-        time_window=time_window,
+        time_interval=time_interval,
+        time_before_start_date=time_before_start_date,
+        time_window_end=time_window_end,
     )
 
     return labs_feature
@@ -157,7 +173,9 @@ def load_problems(
     raw_data_dir: str,
     problems_file: str = "Problem_Lists_19-000093_10082020.txt",
     problems_dx_file: str = "problem_list_diagnoses_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW,
+    time_interval: Optional[str] = None,
+    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
+    time_window_end: str = "Start Date",
 ) -> pd.DataFrame:
     loading_message("Problems")
     problems_df = read_files_and_combine(
@@ -189,7 +207,9 @@ def load_problems(
         agg_on="pr_CCS_CODE",
         outcomes_df=outcomes_df,
         time_col="NOTED_DATE",
-        time_window=time_window,
+        time_interval=time_interval,
+        time_before_start_date=time_before_start_date,
+        time_window_end=time_window_end,
     )
 
     return problems_feature
@@ -199,7 +219,9 @@ def load_procedures(
     outcomes_df: pd.DataFrame,
     raw_data_dir: str,
     procedures_file: str = "Procedures_19-000093_10082020.txt",
-    time_window: Dict[str, int] = TIME_WINDOW,
+    time_interval: Optional[str] = None,
+    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
+    time_window_end: str = "Start Date",
 ) -> pd.DataFrame:
     loading_message("Procedures")
     procedures_df = read_files_and_combine([procedures_file], raw_data_dir)
@@ -218,7 +240,9 @@ def load_procedures(
         agg_on="CPT_SECTION",
         outcomes_df=outcomes_df,
         time_col="PROC_DATE",
-        time_window=time_window,
+        time_interval=time_interval,
+        time_before_start_date=time_before_start_date,
+        time_window_end=time_window_end,
     )
 
     return procedures_feature
