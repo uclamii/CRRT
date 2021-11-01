@@ -7,12 +7,13 @@ from datetime import timedelta
 
 UNIVERSAL_TIME_COL_NAME = "DATE"
 
-# For continuous valued repeated measurements, how to aggregate across a window of time
+
 def std(df: pd.DataFrame) -> float:
     """pd.agg: np.std does not work properly if passed directly."""
     return np.std(df)
 
 
+# For continuous valued repeated measurements, how to aggregate across a window of time
 AGGREGATE_FUNCTIONS = [min, max, np.mean, std, skew, len]
 
 # What window of time to limit our analysis to (relative to end date of outcome)

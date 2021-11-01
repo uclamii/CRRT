@@ -1,6 +1,10 @@
 # Ignore the params we set to do each run
 options.yml 
 
+# ignore pytorch lightning outputs and mlflow outputs
+lightning_logs/
+mlruns/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -124,6 +124,18 @@ def map_provider_id_to_type(
     return static_df
 
 
+def merge_longitudinal_with_static_feaures(
+    longitudinal_features: pd.DataFrame,
+    static_features: pd.DataFrame,
+    how: str = "outer",
+) -> pd.DataFrame:
+    """
+    Outer join: patients with no longitudinal data will stil be included.
+    Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
+    """
+    return longitudinal_features.join(static_features, how=how)
+
+
 def merge_features_with_outcome(
     raw_data_dir: str,
     time_interval: Optional[str] = None,
@@ -138,7 +150,6 @@ def merge_features_with_outcome(
 
     outcomes_df = load_outcomes(raw_data_dir)
 
-    static_df = load_static_features(raw_data_dir)
     longitudinal_dfs = [
         load_diagnoses(
             outcomes_df,
@@ -192,9 +203,8 @@ def merge_features_with_outcome(
     features = reduce(
         lambda df1, df2: pd.merge(df1, df2, on=merge_on, how="outer"), longitudinal_dfs
     )
-    # join with static data, (outer join for same reason)
-    # merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast
-    features = features.join(static_df, how="outer")
+    # NOTE: this will be serialized separately instead
+    # features = merge_longitudinal_with_static_feaures(features, load_static_features(raw_data_dir), how="outer")
 
     # some de-identified IDs missing (NaN), some people with multiple outcomes
     # TODO: decide what to do with multiple outcomes
@@ -207,4 +217,6 @@ def merge_features_with_outcome(
     # merge is incorrect here for the same reason as static
     features_with_outcomes = features.join(working_outcomes_df, how="inner")
 
-    return features_with_outcomes
+    # joining will separate some entries for a patient, groupby to enforce pts and dates are grouped together
+    df = features_with_outcomes.groupby(["IP_PATIENT_ID", "DATE"]).last()
+    return df

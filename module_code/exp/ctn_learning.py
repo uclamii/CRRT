@@ -1,15 +1,24 @@
+from argparse import Namespace
 import pandas as pd
-from sktime import ROCKETClassifier, HIVECOTEV1
+import os
+import torch
+
+from data.pytorch_loaders import CRRTDataModule
+from models.longitudinal_models import CRRTPredictor
 
 
-def continuous_learning(
-    df: pd.DataFrame, modeln: str, seed: int, outcome_coln: str = "recommend_crrt"
-):
-    # https://www.sktime.org/en/stable/api_reference/auto_generated/sktime.classification.hybrid.HIVECOTEV1.html
-    if modeln == "hivecote":
-        model = HIVECOTEV1(n_jobs=-1, random_state=seed)
-    # https://www.sktime.org/en/stable/api_reference/auto_generated/sktime.classification.kernel_based.ROCKETClassifier.html
-    elif modeln == "rocket":
-        model = ROCKETClassifier(n_jobs=-1, random_state=seed)
-    elif modln == "lstm":
-        model = LSTM()
+def seed_everything(seed: int):
+    """Sets seeds and also makes cuda deterministic for pytorch."""
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def continuous_learning(df: pd.DataFrame, args: Namespace):
+    data = CRRTDataModule.from_argparse_args(df, args)
+    data.setup()
+    model = CRRTPredictor.from_argparse_args(args, nfeatures=data.dims[-1])
+    model.fit(data)

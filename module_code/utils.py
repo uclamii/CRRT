@@ -4,7 +4,10 @@ import sys
 import yaml
 from typing import Dict, Optional
 
-from module_code.data.longitudinal_utils import TIME_BEFORE_START_DATE
+from data.longitudinal_utils import TIME_BEFORE_START_DATE
+from data.argparse_utils import YAMLStringDictToDict
+from data.pytorch_loaders import CRRTDataModule
+from models.longitudinal_models import LongitudinalModel
 
 
 def load_cli_args(args_options_path: str = "options.yml"):
@@ -16,17 +19,17 @@ def load_cli_args(args_options_path: str = "options.yml"):
             with open(args_options_path, "r") as f:
                 res = yaml.safe_load(f)
 
-    # set/override cli args below
-    """
-    res = {
-        "run-name": "placeholder",
-        # "experiment-tracking": True,  # any value works, comment line to toggle off
-    }
-    """
+            # set/override cli args below
+            """
+            res = {
+                "run-name": "placeholder",
+                # "experiment-tracking": True,  # any value works, comment line to toggle off
+            }
+            """
 
-    sys.argv = [sys.argv[0]]
-    for k, v in res.items():
-        sys.argv += [f"--{k}", str(v)]
+            sys.argv = [sys.argv[0]]
+            for k, v in res.items():
+                sys.argv += [f"--{k}", str(v)]
 
 
 def init_cli_args() -> Namespace:
@@ -55,6 +58,15 @@ def init_cli_args() -> Namespace:
         type=str,
         help="Name of file that contains a serialized DataFrame of the preprocessed raw data.",
     )
+    p.add_argument(
+        "--serialization",
+        type=str,
+        # Feather does not allow serialization of MultiIndex dataframes
+        choices=["feather", "parquet"],
+        default="feather",
+        help="Name of serialization method to use for preprocessed df file.",
+    )
+
     # Params for generating preprocessed df file
     p.add_argument(
         "--time-interval",
@@ -64,7 +76,8 @@ def init_cli_args() -> Namespace:
     )
     p.add_argument(
         "--time-before-start-date",
-        type=Dict[str, int],
+        type=str,  # will be dict, to str (l30), convert to dict again
+        action=YAMLStringDictToDict(),
         default=TIME_BEFORE_START_DATE,
         help="Dictionary of 'YEARS', 'MONTHS', and 'DAYS' (time) to specify the start date of the window of data to look at.",
     )
@@ -92,6 +105,11 @@ def init_cli_args() -> Namespace:
         help="Name of run under a tracked experiment (logged to mlflow).",
     )
 
+    # add args for pytorch lightning datamodule
+    p = CRRTDataModule.add_data_args(p)
+    # add args for pytorch lightning model
+    p = LongitudinalModel.add_model_args(p)
+
     # return p.parse_args()
     # Ignore unrecognized args
     return p.parse_known_args()[0]
@@ -102,6 +120,7 @@ def get_preprocessed_file_name(
     time_interval: Optional[str] = None,
     time_window_end: Optional[str] = None,
     preprocessed_df_file: Optional[str] = None,
+    serialization: str = "feather",
 ) -> str:
     """
     Uses preprocessed_df_file for file name for preprocessed dataframe.
@@ -123,4 +142,4 @@ def get_preprocessed_file_name(
     # end of window:
     fname += f"_{time_window_end.replace(' ', '').lower()}"
 
-    return fname + ".feather"
+    return fname + "." + serialization
