@@ -17,9 +17,10 @@ if __name__ == "__main__":
     load_cli_args()
     args = init_cli_args()
     preprocessed_df_fname = get_preprocessed_file_name(
-        args.time_before_start_date,
+        args.pre_start_delta,
+        args.post_start_delta,
         args.time_interval,
-        args.preprocessed_df_file,
+        preprocessed_df_file=args.preprocessed_df_file,
         serialization=args.serialization,
     )
     preprocessed_df_path = join(args.raw_data_dir, preprocessed_df_fname)
@@ -44,7 +45,8 @@ if __name__ == "__main__":
         df = merge_features_with_outcome(
             args.raw_data_dir,
             args.time_interval,
-            args.time_before_start_date,
+            args.pre_start_delta,
+            args.post_start_delta,
             args.time_window_end,
         )  # 140s ~2.5 mins, 376.5s ~6mins for daily aggregation
         logging.info(f"Loading took {time.time() - start_time} seconds.")

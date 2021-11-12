@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import skew
 from datetime import timedelta
+from functools import reduce
 
 UNIVERSAL_TIME_COL_NAME = "DATE"
 
@@ -16,50 +17,123 @@ def std(df: pd.DataFrame) -> float:
 # For continuous valued repeated measurements, how to aggregate across a window of time
 AGGREGATE_FUNCTIONS = [min, max, np.mean, std, skew, len]
 
-# What window of time to limit our analysis to (relative to end date of outcome)
-TIME_BEFORE_START_DATE = {"YEARS": 0, "MONTHS": 0, "DAYS": 14}
 
-# TODO: patients that are in the other files but not in the outcome files will not have a corresponding entry/time.
-def time_window_mask(
+def get_delta(delta: Optional[Dict[str, int]] = None) -> timedelta:
+    """Get timedelta if dict is specified, else delta is nothing."""
+    if delta:
+        # while relativedelta is more accurate, timedelta is much faster
+        time_delta = timedelta(
+            days=365 * delta.get("YEARS", 0)
+            + 30 * delta.get("MONTHS", 0)
+            + delta.get("DAYS", 0)
+        )
+    else:
+        time_delta = timedelta(days=0)
+    return time_delta
+
+
+def get_time_window_mask(
     outcomes_df: pd.DataFrame,
-    df: pd.DataFrame,
-    time_col: str,
-    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
-    mask_end: str = "Start Date",
+    pre_start_delta: Optional[Dict[str, int]] = None,
+    post_start_delta: Optional[Dict[str, int]] = None,
+    mask_end: str = "End Date",
 ) -> pd.DataFrame:
-    """Mask the given feature df to entries within some time frame/window from the end date of the outcome.
-    Assumes timecol, Start Date, and End Date are already dtype = DateTime."""
-    outcome_date_cols = (
-        ["Start Date", "End Date"] if mask_end == "End Date" else ["Start Date"]
+    """
+    Assumes outcomes_df index is [pt, start date]
+    Assumes Start Date, and End Date are already dtype = DateTime.
+    Mask is [start date - pre_start_delta, min(end date, start date + post_start_delta)] if both are specified.
+    If neither are specified, [start date, mask_end].
+    """
+    # get df indexed by pt and then columns ["start", "end"]
+    window_dates = outcomes_df["End Date"].reset_index(level="Start Date")
+    mask_start_interval = window_dates["Start Date"] - get_delta(pre_start_delta)
+
+    # don't include "Start/End Date" data if they are the endpoints.
+    if post_start_delta:
+        # Pick whichever is earlier:
+        # mask_end, or however many days after start is specified (if specified)
+        mask_end_interval = pd.concat(
+            [
+                window_dates["End Date"],
+                # Add a day to include dates that might be later in the day
+                # e.g. cutoff Date: 1/4/yyyy, want to keep 1/4/yyyy 4 PM
+                # Simply checking date <= end date won't work if granularity is whole days
+                (
+                    window_dates["Start Date"]
+                    + get_delta(post_start_delta)
+                    + timedelta(days=1)
+                ),
+            ],
+            axis=1,
+        ).min(axis=1)
+    else:  # just use mask_end
+        mask_end_interval = window_dates[mask_end]
+
+    time_window = pd.concat(
+        [mask_start_interval, mask_end_interval],
+        axis=1,
+        keys=["Window Start", "Window End"],
     )
 
-    # Merge feature with end date of outcome
-    merged_df = df.merge(
-        outcomes_df[["IP_PATIENT_ID"] + outcome_date_cols],
-        on="IP_PATIENT_ID",
-        how="right",
-    )
+    # window start = list of all starts, window end = list of all ends (same size) per patient
+    return time_window.groupby("IP_PATIENT_ID").agg(tuple).applymap(list)
 
-    # Mask: keep entries for feature with a date within time_before_start_date years and months from start date of crrt
-    # while relativedelta is more accurate, timedelta is much faster
-    mask_start_interval = merged_df["Start Date"] - timedelta(
-        days=365 * time_before_start_date.get("YEARS", 0)
-        + 30 * time_before_start_date.get("MONTHS", 0)
-        + time_before_start_date.get("DAYS", 0)
-    )
-    # Add a day to include dates that might be later in the day
-    # e.g. End Date: 1/4/yyyy, want to keep 1/4/yyyy 4 PM
-    # Simply checking date <= end date won't work if granularity is whole days
-    mask_end_interval = merged_df[mask_end] + timedelta(days=1)
 
+def apply_time_window_mask(
+    df: pd.DataFrame, time_col: str, time_window: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Assumes time_col dtype is DateTime.
+    Mask the given feature df to entries within some time frame/window per pt and per start date.
+    A pt can have multiple treatements.
+    Check that the entry date is in any of the windows from the treatment dates.
+    """
+
+    def get_window_i_func(idx):
+        """
+        df per window (if a pt has multiple treatments there'll be multiple dfs)
+        If a pt only has 1 treatment the following dfs will have NaT entries.
+        """
+
+        def get_window_i(pt):
+            try:
+                return pt[idx]
+            except IndexError:  # Ignore patients that don't have outcomes.
+                return np.nan
+
+        return get_window_i
+
+    # window start len == window end len, just get the max of either
+    max_num_treatments = time_window.iloc[:, 0].map(len).max()
+    # 1st df = 1st start and end dates for all pts, 2nd df = 2nd "", etc.
+    window_dfs = [
+        time_window.applymap(get_window_i_func(idx), na_action="ignore")
+        for idx in range(max_num_treatments)
+    ]
     # Mask: keep entries within requisite interval
-    mask = (merged_df[time_col] >= mask_start_interval) & (
-        merged_df[time_col] < mask_end_interval
+    corresponding_window = reduce(
+        # OR all the windows (between start & end) via `any` (keeping intact window start date)
+        lambda mask1, mask2: mask1.combine_first(mask2),
+        map(
+            # comparisons with NaT are always false, which is the behavior we want
+            # apply mask to window_i, keep intact which start_date window it fell in
+            lambda df: df["Window Start"].where(
+                (df[time_col] >= df["Window Start"])
+                & (df[time_col] < df["Window End"]),
+                # NaN will be converted to NaT because it's a datetime series
+                np.full_like(df["Window Start"], fill_value=np.nan),
+            ),
+            # merge to keep all pts even without outcomes (so mask is easy to apply)
+            map(
+                lambda window: df.merge(window, on="IP_PATIENT_ID", how="left"),
+                window_dfs,
+            ),
+        ),
     )
-
-    # Remove the merged end date used for masking and return
+    df["Start Date"] = corresponding_window
+    mask = df["Start Date"].notna()
     logging.info(f"Dropping {df.shape[0] - sum(mask)} rows outside of time window.")
-    return merged_df[mask].drop(outcome_date_cols, axis=1)
+    return df[mask]
 
 
 def hcuppy_map_code(
@@ -83,36 +157,34 @@ def hcuppy_map_code(
 def aggregate_cat_feature(
     cat_df: pd.DataFrame,
     agg_on: str,
-    outcomes_df: Optional[pd.DataFrame] = None,  # used for timing
     time_col: Optional[str] = None,
     time_interval: Optional[str] = None,
-    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
-    time_window_end: str = "Start Date",
+    time_window: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
     Aggregate a categorical feature. Basically "Bag of words".
     Will onehot encode, and sum up occurrences for a given patient for a given time window (if given, else all time points) over each time interval.
     Time window is traditionally time_before_start_date -> start_date.
     Time interval comes from the pd.resample/pd.Grouper (e.g. "1D" is daily.)
+
+    Produce multindex: patient > treatment # > day > features.
     """
     if time_col:
         # Enforce date columnn is a datetime object
         cat_df[time_col] = pd.to_datetime(cat_df[time_col])
 
         # mask for time if we have a time_col
-        cat_df = time_window_mask(
-            outcomes_df, cat_df, time_col, time_before_start_date, time_window_end
-        )
-
-    cat_df_cols = (
-        ["IP_PATIENT_ID", agg_on, time_col] if time_col else ["IP_PATIENT_ID", agg_on]
-    )
+        cat_df = apply_time_window_mask(cat_df, time_col, time_window)
+        cat_df_cols = ["IP_PATIENT_ID", agg_on, time_col, "Start Date"]
+    else:
+        cat_df_cols = ["IP_PATIENT_ID", agg_on]
 
     # Get dummies for the categorical column
     cat_feature = pd.get_dummies(cat_df[cat_df_cols], columns=[agg_on])
 
-    # Sum across a patient and per time interval (if specified) over a whole time window
-    group_by = ["IP_PATIENT_ID"]
+    # Sum across a patient and per CRRT treatment (indicated by Start Date):
+    # per time interval (if specified) over a whole time window
+    group_by = ["IP_PATIENT_ID", "Start Date"]
     # chunk by time interval if exists
     if time_interval and time_col:
         # Uniform date column name if aggregating by time_interval
@@ -125,14 +197,12 @@ def aggregate_cat_feature(
 
 
 def aggregate_ctn_feature(
-    outcomes_df: pd.DataFrame,
     ctn_df: pd.DataFrame,
     agg_on: str,  # specify what is the name of the value (e.g. sbp vs dbp)
     agg_values_col: str,
     time_col: str,
     time_interval: Optional[str] = None,
-    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
-    time_window_end: str = "Start Date",
+    time_window: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Aggregate a continuous longitudinal feature (e.g., vitals, labs).
     Filter time window based on a column name provided.
@@ -144,12 +214,11 @@ def aggregate_ctn_feature(
     # Enforce date columnn is a datetime object
     ctn_df[time_col] = pd.to_datetime(ctn_df[time_col])
     # filter to window
-    ctn_df = time_window_mask(
-        outcomes_df, ctn_df, time_col, time_before_start_date, time_window_end
-    )
+    ctn_df = apply_time_window_mask(ctn_df, time_col, time_window)
 
     # Sum across a patient and per time interval (if specified) over a whole time window per feature
-    group_by = ["IP_PATIENT_ID"]
+    group_by = ["IP_PATIENT_ID", "Start Date"]
+    # group_by = ["IP_PATIENT_ID"]
     # chunk by time interval if exists
     if time_interval:
         # Uniform date column name if aggregating by time_interval

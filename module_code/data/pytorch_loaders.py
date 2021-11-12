@@ -1,23 +1,27 @@
 from argparse import ArgumentParser, Namespace
 import inspect
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 import pytorch_lightning as pl
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset, TensorDataset
-from sktime.transformations.series.impute import Imputer
+from torch.utils.data import DataLoader, Dataset
+from torch.nn.utils.rnn import pad_sequence
 
+# from sktime.transformations.series.impute import Imputer
 # explicitly require this experimental feature
-from sklearn.experimental import enable_iterative_imputer  # noqa
-
+# from sklearn.experimental import enable_iterative_imputer  # noqa
 # from sklearn.impute import IterativeImputer
 from sklearn.impute import KNNImputer
 from sklearn.preprocessing import FunctionTransformer  # , StandardScaler
+from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
-SplitDataTuple = Tuple[pd.DataFrame, pd.Series, List[int]]
+from data.longitudinal_features import CATEGORICAL_COL_REGEX
+
+# X, y
+SplitDataTuple = Tuple[pd.DataFrame, pd.Series]
 
 
 class CRRTDataModule(pl.LightningDataModule):
@@ -38,40 +42,35 @@ class CRRTDataModule(pl.LightningDataModule):
         self.seed = seed
         self.preprocessed_df = preprocessed_df
         self.save_hyperparameters(ignore=["seed", "preprocessed_df"])
+        self.categorical_columns = preprocessed_df.filter(
+            regex=CATEGORICAL_COL_REGEX, axis=1
+        ).columns
 
     def setup(self, stage: Optional[str] = None):
         """
         Ops performed across GPUs. e.g. splits, transforms, etc.
         """
-        # remove unwanted columns, esp non-numeric ones, before pad and pack
-        df = self.preprocessed_df.select_dtypes(["number"])
-        # target is separate from the original outcomes, don't include them
-        # sets dims, note this will pad target column too,
-        # padded_array = self.pad_sequences(df)
-        padded_array = df
-
-        # split into data and labels
-        outcome_col_index = self.preprocessed_df.columns.get_loc(
-            self.hparams.outcome_col_name
-        )
         X, y = (
-            # ignore outcome col
-            np.delete(padded_array, outcome_col_index, axis=-1),
-            # keep only outcome col
-            padded_array[:, :, outcome_col_index],
+            self.preprocessed_df.drop(self.hparams.outcome_col_name, axis=1),
+            self.preprocessed_df[self.hparams.outcome_col_name],
         )
-        # remove 1 from nfeatures since outcome col got removed
-        self.dims = (self.dims[0], self.dims[1], self.dims[2] - 1)
+        # its the same for all the sequences, just take one
+        # y = y.groupby("IP_PATIENT_ID").last()
+
+        # remove unwanted columns, esp non-numeric ones, before pad and pack
+        X = X.select_dtypes(["number"])
+
+        self.nfeatures = X.shape[1]
 
         train_tuple, val_tuple, test_tuple = self.split_dataset(X, y)
-        train_tuple, val_tuple, test_tuple = self.process_dataset(
-            train_tuple, val_tuple, test_tuple
-        )
+
+        # fit pipeline on train, call transform in get_item of dataset
+        transform = self.get_post_split_transform(train_tuple)
 
         # set self.train, self.val, self.test
-        self.train = self.get_dataset_from_df(train_tuple)
-        self.val = self.get_dataset_from_df(val_tuple)
-        self.test = self.get_dataset_from_df(test_tuple)
+        self.train = CRRTDataset(train_tuple, transform)
+        self.val = CRRTDataset(val_tuple, transform)
+        self.test = CRRTDataset(test_tuple, transform)
 
     def train_dataloader(self):
         return self.get_dataloader(self.train)
@@ -85,164 +84,103 @@ class CRRTDataModule(pl.LightningDataModule):
     #############
     #  HELPERS  #
     #############
-    # def get_dataset_from_df(
-    # self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.DataFrame, np.ndarray],
-    # ) -> Dataset:
-    def get_dataset_from_df(self, *args) -> Dataset:
-        """
-        Pytorch modules require Datasets for train/val/test,
-        but we start with a df or ndarray, especially after splitting the data.
-        """
-        return TensorDataset(*(Tensor(arg) for arg in args))
-
     def get_dataloader(self, dataset: Dataset) -> DataLoader:
         return DataLoader(
             dataset,
+            collate_fn=self.batch_collate,
             batch_size=self.hparams.batch_size,
             shuffle=False,
             num_workers=self.hparams.num_gpus * 4,
         )
 
-    def process_dataset(
-        self, train: SplitDataTuple, val: SplitDataTuple, test: SplitDataTuple
-    ) -> Tuple[SplitDataTuple, SplitDataTuple, SplitDataTuple]:
+    def batch_collate(
+        self, batch: Tuple[np.ndarray, int], transform: Callable = None
+    ) -> SplitDataTuple:
+        """
+        Batch is a list of tuples with (example, label).
+        Pad the variable length sequences, add seq lens, and enforce tensor.
+        """
+        X, y = zip(*batch)
+        y = Tensor(y)
+        seq_lens = Tensor([len(pt_seq) for pt_seq in X])
+        X = pad_sequence(X, batch_first=True, padding_value=self.PAD_VALUE)
+
+        return (X, y, seq_lens)
+
+    def get_post_split_transform(self, train: SplitDataTuple) -> Callable:
         """
         The serialized preprocessed df should alreayd have dealth with categorical variables and aggregated them as counts, so we only deal with numeric / continuous variables.
         """
         # TODO: write tests
         pipeline = Pipeline(
             [
+                (
+                    "categorical-fillna",
+                    ColumnTransformer(
+                        [  # (name, transformer, columns) tuples
+                            (
+                                "fillna",
+                                FunctionTransformer(
+                                    func=np.nan_to_num, kw_args={"nan": 0}
+                                ),
+                                # TODO convert to indices
+                                self.categorical_columns,
+                            )
+                        ],
+                        remainder="passthrough",
+                    ),
+                ),
+                # (
+                #     "interpolate",
+                #     FunctionTransformer(
+                #         func=lambda nparr: pd.DataFrame(nparr)
+                #         .interpolate(method="linear")
+                #         .values
+                #     ),
+                # )
                 # ("scale", StandardScaler()),
                 # ("iteraitve-impute", IterativeImputer(max_iter=10, random_state=self.seed)),
+                # TODO: this might explode with more patients (since features will increase)
+                # TODO: alternate: https://scikit-learn.org/stable/modules/generated/sklearn.neighbors.KDTree.html
                 ("knn-impute", KNNImputer()),
             ]
         )
 
-        def transform_nonpadded(
-            split_data: Tuple[SplitDataTuple, SplitDataTuple, SplitDataTuple],
-            fit: bool = False,
-        ) -> np.ndarray:
-            """Transform only nonpadded portion of data."""
-            X, _, seq_lens = split_data
-            batch_size, max_seq_len, nfeatures = X.shape
-            # flatten to 2d
-            flattened = X.reshape(batch_size * max_seq_len, nfeatures)
-            mask_out_padded = (flattened != self.PAD_VALUE).all(axis=1)
-            flattened_no_padding = flattened[mask_out_padded]
-            # impute on 2d
-            if fit:
-                print("Fitting transformer...")
-                pipeline.fit(flattened_no_padding)
-            print("Running transform..")
-            imputed = pipeline.transform(flattened_no_padding)
+        data, labels = train
+        pipeline.fit(pd.concat(data, keys=labels.index))
 
-            # put imputed values back in
-            start = 0
-            for i, seq_len in enumerate(seq_lens):
-                X[i][:seq_len] = imputed[start : start + seq_len]
-                start += seq_len
-
-            return X
-
-        # Replace with transformed version
-        print("Transforming data...")
-        train_tuple = transform_nonpadded(train, fit=True) + train[1:]
-        val_tuple = transform_nonpadded(val) + val[1:]
-        test_tuple = transform_nonpadded(test) + test[1:]
-
-        return (train_tuple, val_tuple, test_tuple)
+        return pipeline.transform
 
     def split_dataset(
-        self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.DataFrame, np.ndarray],
+        self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
     ) -> Tuple[SplitDataTuple, SplitDataTuple, SplitDataTuple]:
         """
-        Splitting with stratification using sklearn, needs nparray.
+        Splitting with stratification using sklearn.
         We then convert to Dataset so the Dataloaders can use that.
         """
-        if isinstance(X, pd.DataFrame):
-            X = X.values
-        if isinstance(y, pd.DataFrame) or isinstance(y, pd.Series):
-            y = y.values
-
-        # its the same for all the sequences, just take the first one
-        y = y[:, 0]
-
-        (
-            X_train_val,
-            X_test,
-            y_train_val,
-            y_test,
-            seq_lens_train_val,
-            seq_lens_test,
-        ) = train_test_split(
-            X,
-            y,
-            self.seq_lengths,
+        # sample = [pt, treatment]
+        sample_ids = X.index.unique().values
+        # patient_ids = X.index.unique("IP_PATIENT_ID").values
+        train_val_ids, test_ids = train_test_split(
+            sample_ids,
             test_size=self.hparams.test_split_size,
             stratify=y,
             random_state=self.seed,
         )
-        X_train, X_val, y_train, y_val, seq_lens_train, seq_lens_val = train_test_split(
-            X_train_val,
-            y_train_val,
-            seq_lens_train_val,
+        train_ids, val_ids = train_test_split(
+            train_val_ids,
             test_size=self.hparams.val_split_size,
-            stratify=y_train_val,
+            stratify=y[train_val_ids],
             random_state=self.seed,
         )
 
-        train_tuple = (X_train, y_train, seq_lens_train)
-        val_tuple = (X_val, y_val, seq_lens_val)
-        test_tuple = (X_test, y_test, seq_lens_test)
-
-        return (train_tuple, val_tuple, test_tuple)
-
-        """
-        ##### This ways uses random_split from pytorch itself, cannot stratify
-        # Assign train/val/test datasets for use in dataloaders
-        # Reproducibility
-        generator = Generator().manual_seed(self.seed)
-        # Get literal sizes for random_split
-        test_size = int(self.hparams.test_split_size * len(dataset))
-        train_val_size = len(dataset) - test_size
-        # split trainval / test
-        train_val, self.test = random_split(
-            dataset, [train_val_size, test_size], generator=generator
+        # return (X,y) pair, where X is a List of pd dataframes for each pt
+        # this is so the dimensions match when we zip them into a pytorch dataset
+        return (
+            ([X.loc[id] for id in ids], y[ids])
+            # (X.loc[ids], y[ids])
+            for ids in (train_ids, val_ids, test_ids)
         )
-        # split train and val from trainval
-        val_size = int(self.hparams.val_split_size * len(train_val))
-        train_size = len(train_val) - val_size
-        self.train, self.val = random_split(
-            train_val, [train_size, val_size], generator=generator
-        )
-        """
-
-    def pad_sequences(self, X: pd.DataFrame) -> np.ndarray:
-        """
-        Sets dimensions of dataset.
-        https://towardsdatascience.com/taming-lstms-variable-sized-mini-batches-and-why-pytorch-is-good-for-your-health-61d35642972e
-        """
-        # TODO: write tests
-        grouped_sample_dfs = X.groupby(level="IP_PATIENT_ID")
-        n_samples = grouped_sample_dfs.ngroups  # number of patients
-        # Save this for packing/unpacking later
-        self.seq_lengths = grouped_sample_dfs.size().values  # seq len per patient
-        n_features = X.shape[1]  # number of features per pt per seq entry
-        longest_seq = max(self.seq_lengths)
-
-        # Create empty matrix with padding tokens
-        self.dims = (n_samples, longest_seq, n_features)
-        padded = np.ones(self.dims) * self.PAD_VALUE
-        # copy over the actual sequences
-        start = 0
-        for i, seq_len in enumerate(self.seq_lengths):
-            # original sequence values for sample i (.iloc gets row by row, not by outer index (pt))
-            sequence = X.iloc[start : start + seq_len].values
-            # fill sample i from beginning to seq_len with the original values
-            padded[i, 0:seq_len] = sequence
-            start += seq_len
-
-        return padded
 
     @staticmethod
     def add_data_args(parent_parser: ArgumentParser) -> ArgumentParser:
@@ -298,3 +236,22 @@ class CRRTDataModule(pl.LightningDataModule):
         data_kwargs.update(**kwargs)
 
         return cls(preprocessed_df, **data_kwargs)
+
+
+class CRRTDataset(Dataset):
+    def __init__(
+        self, split: SplitDataTuple, transform: Optional[Callable] = None
+    ) -> None:
+        self.split = split
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.split[1])
+
+    def __getitem__(self, index: int):
+        X = self.split[0][index]
+        y = self.split[1][index]
+        if self.transform:
+            X = self.transform(X)
+
+        return (Tensor(X), y)

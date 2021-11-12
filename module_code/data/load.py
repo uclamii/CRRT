@@ -12,7 +12,7 @@ from data.longitudinal_features import (
     load_problems,
     load_procedures,
 )
-from data.longitudinal_utils import TIME_BEFORE_START_DATE, UNIVERSAL_TIME_COL_NAME
+from data.longitudinal_utils import UNIVERSAL_TIME_COL_NAME, get_time_window_mask
 from data.utils import (
     loading_message,
     onehot,
@@ -20,8 +20,30 @@ from data.utils import (
 )
 
 
+def get_num_prev_crrt_treatments(df: pd.DataFrame):
+    """
+    Works on any df as as long as it has pt id and start date.
+    Returns number of prev crrt treatments per [pt, start date].
+    Good to join with dfs with the same/similar index.
+    """
+    # get unique start dates per pt (Series[List[Date]])
+    # multiindex of pt and then num prev crrt treatments (from reset index)
+    treatments_per_pt = df.groupby(["IP_PATIENT_ID"]).apply(
+        lambda df: df["Start Date"].reset_index(drop=True)
+    )
+    # rename the outermost index which should be num prev treatments
+    treatments_per_pt.index.rename("Num Prev CRRT Treatments", level=-1, inplace=True)
+    # separate it out and make multindex: [pt, start date]
+    num_prev_crrt_treatments = treatments_per_pt.reset_index(level=-1).set_index(
+        "Start Date", append=True
+    )  # add start date as second index
+    return num_prev_crrt_treatments
+
+
 def load_outcomes(
-    raw_data_dir: str, outcome_file: str = "CRRT Deidentified 2017-2019.csv",
+    raw_data_dir: str,
+    group_by: List[str],
+    outcome_file: str = "CRRT Deidentified 2017-2019.csv",
 ) -> pd.DataFrame:
     """
     Load outcomes from outcomes file.
@@ -47,6 +69,9 @@ def load_outcomes(
     # TODO: Should i drop the bad row?
     outcomes_df = outcomes_df[exclude_peds_mask & exactly_one_outcome_mask]
 
+    # Drop missing pt ids
+    outcomes_df = outcomes_df.dropna(subset=["IP_PATIENT_ID"])
+
     #### Construct Binary Outcome ####
     # Recommend CRRT if they had a positive outcome.
     recommend_crrt = (outcomes_df[positive_outcomes] == 1).any(axis=1)
@@ -61,7 +86,14 @@ def load_outcomes(
     offset = outcomes_df["CRRT Total Days"].map(lambda days: timedelta(days=days - 1))
     outcomes_df["Start Date"] = outcomes_df["End Date"] - offset
 
-    return outcomes_df
+    # patients can have multiple treatments but each (pt, treatment) is 1 sample
+    # we dont want to lose info of previous treatments, so we add as feature
+    num_prev_crrt_treatments = get_num_prev_crrt_treatments(outcomes_df)
+
+    # join with num prev crrt treatments (set index to [pt, start date])
+    return outcomes_df.merge(
+        num_prev_crrt_treatments, how="inner", on=group_by
+    ).set_index(group_by)
 
 
 def load_static_features(
@@ -139,7 +171,8 @@ def merge_longitudinal_with_static_feaures(
 def merge_features_with_outcome(
     raw_data_dir: str,
     time_interval: Optional[str] = None,
-    time_before_start_date: Dict[str, int] = TIME_BEFORE_START_DATE,
+    pre_start_delta: Optional[Dict[str, int]] = None,
+    post_start_delta: Optional[Dict[str, int]] = None,
     time_window_end: str = "Start Date",
 ) -> pd.DataFrame:
     """
@@ -148,56 +181,34 @@ def merge_features_with_outcome(
     Will drop patients who are missing outcomes.
     """
 
-    outcomes_df = load_outcomes(raw_data_dir)
+    merge_on = ["IP_PATIENT_ID", "Start Date"]
+    outcomes_df = load_outcomes(raw_data_dir, group_by=merge_on)
+    time_window = get_time_window_mask(
+        outcomes_df, pre_start_delta, post_start_delta, time_window_end
+    )
+
+    # this needs to come after load outcomes
+    if time_interval:
+        merge_on.append(UNIVERSAL_TIME_COL_NAME)
 
     longitudinal_dfs = [
         load_diagnoses(
-            outcomes_df,
-            raw_data_dir,
-            time_interval=time_interval,
-            time_before_start_date=time_before_start_date,
-            time_window_end=time_window_end,
+            raw_data_dir, time_interval=time_interval, time_window=time_window,
         ),
         load_vitals(
-            outcomes_df,
-            raw_data_dir,
-            time_interval=time_interval,
-            time_before_start_date=time_before_start_date,
-            time_window_end=time_window_end,
+            raw_data_dir, time_interval=time_interval, time_window=time_window,
         ),
         load_medications(
-            outcomes_df,
-            raw_data_dir,
-            time_interval=time_interval,
-            time_before_start_date=time_before_start_date,
-            time_window_end=time_window_end,
+            raw_data_dir, time_interval=time_interval, time_window_end=time_window_end,
         ),
-        load_labs(
-            outcomes_df,
-            raw_data_dir,
-            time_interval=time_interval,
-            time_before_start_date=time_before_start_date,
-            time_window_end=time_window_end,
-        ),
+        load_labs(raw_data_dir, time_interval=time_interval, time_window=time_window,),
         load_problems(
-            outcomes_df,
-            raw_data_dir,
-            time_interval=time_interval,
-            time_before_start_date=time_before_start_date,
-            time_window_end=time_window_end,
+            raw_data_dir, time_interval=time_interval, time_window=time_window,
         ),
         load_procedures(
-            outcomes_df,
-            raw_data_dir,
-            time_interval=time_interval,
-            time_before_start_date=time_before_start_date,
-            time_window_end=time_window_end,
+            raw_data_dir, time_interval=time_interval, time_window=time_window,
         ),
     ]
-
-    merge_on = (
-        ["IP_PATIENT_ID", UNIVERSAL_TIME_COL_NAME] if time_interval else "IP_PATIENT_ID"
-    )
 
     # outer join features with each other so patients who might not have allergies,  for example, are still included
     features = reduce(
@@ -206,17 +217,11 @@ def merge_features_with_outcome(
     # NOTE: this will be serialized separately instead
     # features = merge_longitudinal_with_static_feaures(features, load_static_features(raw_data_dir), how="outer")
 
-    # some de-identified IDs missing (NaN), some people with multiple outcomes
-    # TODO: decide what to do with multiple outcomes
-    working_outcomes_df = (
-        outcomes_df.dropna(subset=["IP_PATIENT_ID"])
-        .drop_duplicates(subset=["IP_PATIENT_ID"], keep="first")
-        .set_index("IP_PATIENT_ID")
-    )
     # inner join features with outcomes (only patients with outcomes)
     # merge is incorrect here for the same reason as static
-    features_with_outcomes = features.join(working_outcomes_df, how="inner")
+    features_with_outcomes = features.join(outcomes_df, how="inner")
 
-    # joining will separate some entries for a patient, groupby to enforce pts and dates are grouped together
-    df = features_with_outcomes.groupby(["IP_PATIENT_ID", "DATE"]).last()
-    return df
+    # patients with multiple treatments will be separated, enforce they're grouped
+    # df = features_with_outcomes.groupby(merge_on).last()
+
+    return features_with_outcomes

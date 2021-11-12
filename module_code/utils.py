@@ -4,7 +4,6 @@ import sys
 import yaml
 from typing import Dict, Optional
 
-from data.longitudinal_utils import TIME_BEFORE_START_DATE
 from data.argparse_utils import YAMLStringDictToDict
 from data.pytorch_loaders import CRRTDataModule
 from models.longitudinal_models import LongitudinalModel
@@ -75,18 +74,25 @@ def init_cli_args() -> Namespace:
         help="Time interval in which to aggregate the raw data for preprocessing (formatted for pandas.resample()).",
     )
     p.add_argument(
-        "--time-before-start-date",
+        "--pre-start-delta",
         type=str,  # will be dict, to str (l30), convert to dict again
         action=YAMLStringDictToDict(),
-        default=TIME_BEFORE_START_DATE,
-        help="Dictionary of 'YEARS', 'MONTHS', and 'DAYS' (time) to specify the start date of the window of data to look at.",
+        default=None,
+        help="Dictionary of 'YEARS', 'MONTHS', and 'DAYS' (time) to specify offset of days before the start date to set the start point of the time window.",
+    )
+    p.add_argument(
+        "--post-start-delta",
+        type=str,  # will be dict, to str (l30), convert to dict again
+        action=YAMLStringDictToDict(),
+        default=None,
+        help="Dictionary of 'YEARS', 'MONTHS', and 'DAYS' (time) to specify offset of days after the start date to set the end point of the time window.",
     )
     p.add_argument(
         "--time-window-end",
         type=str,
         default="Start Date",
         choices=["Start Date", "End Date"],
-        help="Specifying if to preprocess data only until the start date of CRRT, or to go all the way through the end date of CRRT.",
+        help="Specifying if to preprocess data only until the start date of CRRT, or to go all the way through the end date of CRRT, will be used if no post-start-delta passed.",
     )
 
     # Logging / Tracking
@@ -115,8 +121,22 @@ def init_cli_args() -> Namespace:
     return p.parse_known_args()[0]
 
 
+def time_delta_to_str(delta: Dict[str, int]) -> str:
+    """
+    Coverts timedelta dict to str form: 5 years, 4 months, and 3 days => 5y4m3d
+    Ignore values of 0: 4months and 3 days => 4m3d
+    Assumes order of keys are: years, months, then days.
+    """
+    delta_str = ""
+    for time_name, amount in delta.items():
+        if amount > 0:
+            delta_str += f"{amount}{time_name[0].lower()}"
+    return delta_str
+
+
 def get_preprocessed_file_name(
-    time_before_start_date: Optional[Dict[str, int]] = None,
+    pre_start_delta: Optional[Dict[str, int]] = None,
+    post_start_delta: Optional[Dict[str, int]] = None,
     time_interval: Optional[str] = None,
     time_window_end: Optional[str] = None,
     preprocessed_df_file: Optional[str] = None,
@@ -126,20 +146,25 @@ def get_preprocessed_file_name(
     Uses preprocessed_df_file for file name for preprocessed dataframe.
     However, if it's not provided it will automatically generate a name based on the arguments used to generate the file.
 
-    df_{time interval the features are aggregated in}_{time window start before start date of crrt}_{end time of the time window}.extension
+    df_{time interval the features are aggregated in}agg_[{time window start},{time window end}].extension
+    If providing deltas: [startdate-pre_start_delta,startdate+post_start_delta]
+    If providing neither [startdate,time_window_end].
     """
     if preprocessed_df_file:
-        return preprocessed_df_file
+        return preprocessed_df_file + f".{serialization}"
     fname = "df"
     if time_interval:
         fname += f"_{time_interval}agg"
     # time window
-    fname += "_"
-    for time_name, amount in time_before_start_date.items():
-        # e.g. 14d for DAYS: 14, but ignore values of 0
-        if amount > 0:
-            fname += f"{amount}{time_name[0].lower()}"
+    fname += "_[startdate"
+    if pre_start_delta:
+        # subtracting the delta time
+        fname += f"-{time_delta_to_str(pre_start_delta)}"
+    fname += ","
     # end of window:
-    fname += f"_{time_window_end.replace(' ', '').lower()}"
+    if post_start_delta:
+        fname += f"startdate+{time_delta_to_str(post_start_delta)}]"
+    else:
+        fname += f"{time_window_end.replace(' ', '').lower()}]"
 
     return fname + "." + serialization

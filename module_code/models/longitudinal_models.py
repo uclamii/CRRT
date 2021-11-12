@@ -147,9 +147,7 @@ class LongitudinalModel(pl.LightningModule):
         for metricfn in self.metrics:
             self.log(
                 f"{split}-{metricfn._get_name()}",
-                self.compute_fn_on_ouput(
-                    outputs["pred"], outputs["ground_truth"], metricfn
-                ),
+                metricfn(outputs["pred"], outputs["ground_truth"]),
                 on_step=False,
                 on_epoch=True,
                 prog_bar=False,
@@ -232,7 +230,7 @@ class LongitudinalModel(pl.LightningModule):
             "--metrics",
             type=str,
             action=YAMLStringListToList(str),
-            help="(List of comma-separated strings no spaces) Name of Pytorch Metrics from torchmetrics.",
+            help="(List of comma-separated strings) Name of Pytorch Metrics from torchmetrics.",
         )
         p.add_argument(
             "--loss-name",

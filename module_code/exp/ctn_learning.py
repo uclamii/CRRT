@@ -20,5 +20,5 @@ def seed_everything(seed: int):
 def continuous_learning(df: pd.DataFrame, args: Namespace):
     data = CRRTDataModule.from_argparse_args(df, args)
     data.setup()
-    model = CRRTPredictor.from_argparse_args(args, nfeatures=data.dims[-1])
+    model = CRRTPredictor.from_argparse_args(args, nfeatures=data.nfeatures)
     model.fit(data)

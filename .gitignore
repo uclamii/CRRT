@@ -1,3 +1,6 @@
+# ignore vscode stuff
+.vscode/
+
 # Ignore the params we set to do each run
 options.yml 
 
