@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 import inspect
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 import pytorch_lightning as pl
@@ -147,7 +147,7 @@ class CRRTDataModule(pl.LightningDataModule):
         )
 
         data, labels = train
-        pipeline.fit(pd.concat(data, keys=labels.index))
+        pipeline.fit(pd.DataFrame(data))
 
         return pipeline.transform
 
@@ -252,6 +252,7 @@ class CRRTDataset(Dataset):
         X = self.split[0][index]
         y = self.split[1][index]
         if self.transform:
-            X = self.transform(X)
+            # X = self.transform(X)
+            X = self.transform(X.to_frame().T)
 
         return (Tensor(X), y)

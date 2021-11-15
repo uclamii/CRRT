@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from scipy.stats import skew
 from datetime import timedelta
-from functools import reduce
 
 UNIVERSAL_TIME_COL_NAME = "DATE"
 
@@ -70,17 +69,25 @@ def get_time_window_mask(
         mask_end_interval = window_dates[mask_end]
 
     time_window = pd.concat(
-        [mask_start_interval, mask_end_interval],
+        [window_dates["Start Date"], mask_start_interval, mask_end_interval],
         axis=1,
-        keys=["Window Start", "Window End"],
+        keys=["Start Date", "Window Start", "Window End"],
     )
 
-    # window start = list of all starts, window end = list of all ends (same size) per patient
+    # starts: list of all corresponding start dates to the windows, window start = list of all starts, window end = list of all ends (same size) per patient
     return time_window.groupby("IP_PATIENT_ID").agg(tuple).applymap(list)
 
 
+def dates_are_in_range(dates: pd.Series, start: pd.Series, end: pd.Series) -> pd.Series:
+    """
+    Checks if dates are in in the range between start and end.
+    If start == end, just check that date is the start date (only 1 day of data).
+    """
+    return ((dates >= start) & (dates < end)).where(start != end, dates == start)
+
+
 def apply_time_window_mask(
-    df: pd.DataFrame, time_col: str, time_window: pd.DataFrame
+    longitudinal_df: pd.DataFrame, time_col: str, time_window: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Assumes time_col dtype is DateTime.
@@ -89,51 +96,60 @@ def apply_time_window_mask(
     Check that the entry date is in any of the windows from the treatment dates.
     """
 
-    def get_window_i_func(idx):
+    def get_treatment_i_window_fn(
+        treatment_idx: int,
+    ) -> Callable[[pd.DataFrame], pd.Series]:
         """
-        df per window (if a pt has multiple treatments there'll be multiple dfs)
+        df per treatment (if a pt has multiple treatments there'll be multiple dfs)
         If a pt only has 1 treatment the following dfs will have NaT entries.
+        Treatment index = idx
         """
 
-        def get_window_i(pt):
+        # function to map the section of the time_window df for a pt
+        def get_window(patient_time_window_df: pd.DataFrame) -> pd.Series:
             try:
-                return pt[idx]
+                return patient_time_window_df[treatment_idx]
             except IndexError:  # Ignore patients that don't have outcomes.
                 return np.nan
 
-        return get_window_i
+        return get_window
 
     # window start len == window end len, just get the max of either
     max_num_treatments = time_window.iloc[:, 0].map(len).max()
     # 1st df = 1st start and end dates for all pts, 2nd df = 2nd "", etc.
     window_dfs = [
-        time_window.applymap(get_window_i_func(idx), na_action="ignore")
+        time_window.applymap(get_treatment_i_window_fn(idx), na_action="ignore")
         for idx in range(max_num_treatments)
     ]
+    # merge on pt id to combine with time_window
+    longitudinal_df = longitudinal_df.set_index("IP_PATIENT_ID")
     # Mask: keep entries within requisite interval
-    corresponding_window = reduce(
-        # OR all the windows (between start & end) via `any` (keeping intact window start date)
-        lambda mask1, mask2: mask1.combine_first(mask2),
+    df_entries_in_range = pd.concat(
         map(
             # comparisons with NaT are always false, which is the behavior we want
             # apply mask to window_i, keep intact which start_date window it fell in
-            lambda df: df["Window Start"].where(
-                (df[time_col] >= df["Window Start"])
-                & (df[time_col] < df["Window End"]),
-                # NaN will be converted to NaT because it's a datetime series
-                np.full_like(df["Window Start"], fill_value=np.nan),
-            ),
-            # merge to keep all pts even without outcomes (so mask is easy to apply)
+            lambda df: df[
+                dates_are_in_range(
+                    df[time_col], start=df["Window Start"], end=df["Window End"]
+                )
+                # keep only Start Date, not Window Start and Window End
+            ].drop(["Window Start", "Window End"], axis=1),
+            # keep only pts with outcomes
             map(
-                lambda window: df.merge(window, on="IP_PATIENT_ID", how="left"),
+                lambda window: longitudinal_df.merge(
+                    window,
+                    on="IP_PATIENT_ID",
+                    how="inner",  # , left_index=True, right_index=True
+                ),
                 window_dfs,
             ),
         ),
     )
-    df["Start Date"] = corresponding_window
-    mask = df["Start Date"].notna()
-    logging.info(f"Dropping {df.shape[0] - sum(mask)} rows outside of time window.")
-    return df[mask]
+    logging.info(
+        f"Dropping {longitudinal_df.shape[0] - df_entries_in_range.shape[0]} rows outside of time window."
+    )
+    # the aggs don't expect pt id to be in the index, reset the index.
+    return df_entries_in_range.reset_index()
 
 
 def hcuppy_map_code(

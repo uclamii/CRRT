@@ -195,18 +195,16 @@ def merge_features_with_outcome(
         load_diagnoses(
             raw_data_dir, time_interval=time_interval, time_window=time_window,
         ),
-        load_vitals(
-            raw_data_dir, time_interval=time_interval, time_window=time_window,
-        ),
+        load_vitals(raw_data_dir, time_interval=time_interval, time_window=time_window),
         load_medications(
-            raw_data_dir, time_interval=time_interval, time_window_end=time_window_end,
+            raw_data_dir, time_interval=time_interval, time_window=time_window
         ),
-        load_labs(raw_data_dir, time_interval=time_interval, time_window=time_window,),
+        load_labs(raw_data_dir, time_interval=time_interval, time_window=time_window),
         load_problems(
-            raw_data_dir, time_interval=time_interval, time_window=time_window,
+            raw_data_dir, time_interval=time_interval, time_window=time_window
         ),
         load_procedures(
-            raw_data_dir, time_interval=time_interval, time_window=time_window,
+            raw_data_dir, time_interval=time_interval, time_window=time_window
         ),
     ]
 

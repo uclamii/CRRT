@@ -9,7 +9,7 @@ from sklearn.base import TransformerMixin, BaseEstimator
 import torch
 from torch import Tensor, load
 from torch.nn import LSTM, Linear, Module, ModuleDict, Sigmoid
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence  # , pad_packed_sequence
 import torch.optim as optim
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
