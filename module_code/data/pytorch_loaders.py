@@ -11,8 +11,9 @@ from torch.nn.utils.rnn import pad_sequence
 # from sktime.transformations.series.impute import Imputer
 # explicitly require this experimental feature
 # from sklearn.experimental import enable_iterative_imputer  # noqa
-# from sklearn.impute import IterativeImputer
-from sklearn.impute import KNNImputer
+from sklearn.impute import SimpleImputer
+
+# from sklearn.impute import KNNImputer
 from sklearn.preprocessing import FunctionTransformer  # , StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
@@ -120,9 +121,7 @@ class CRRTDataModule(pl.LightningDataModule):
                         [  # (name, transformer, columns) tuples
                             (
                                 "fillna",
-                                FunctionTransformer(
-                                    func=np.nan_to_num, kw_args={"nan": 0}
-                                ),
+                                SimpleImputer(strategy="constant", fill_value=0),
                                 # TODO convert to indices
                                 self.categorical_columns,
                             )
@@ -142,7 +141,8 @@ class CRRTDataModule(pl.LightningDataModule):
                 # ("iteraitve-impute", IterativeImputer(max_iter=10, random_state=self.seed)),
                 # TODO: this might explode with more patients (since features will increase)
                 # TODO: alternate: https://scikit-learn.org/stable/modules/generated/sklearn.neighbors.KDTree.html
-                ("knn-impute", KNNImputer()),
+                # ("knn-impute", KNNImputer()),
+                ("simple-impute", SimpleImputer(strategy="constant", fill_value=0)),
             ]
         )
 

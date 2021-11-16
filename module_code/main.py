@@ -20,8 +20,9 @@ if __name__ == "__main__":
         args.pre_start_delta,
         args.post_start_delta,
         args.time_interval,
-        preprocessed_df_file=args.preprocessed_df_file,
-        serialization=args.serialization,
+        args.time_window_end,
+        args.preprocessed_df_file,
+        args.serialization,
     )
     preprocessed_df_path = join(args.raw_data_dir, preprocessed_df_fname)
 
