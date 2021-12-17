@@ -26,10 +26,8 @@ def YAMLStringListToList(convert: type = str, choices: Optional[List[str]] = Non
     return ConvertToList
 
 
-def YAMLStringDictToDict(
-    convert: type = str, choices: Optional[List[str]] = None,
-):
-    class ConvertToList(Action):
+def YAMLStringDictToDict(choices: Optional[List[str]] = None):
+    class ConvertToDict(Action):
         """Takes a comma separated list (no spaces) from command line and parses into list of some type (Default str)."""
 
         def __call__(
@@ -44,14 +42,12 @@ def YAMLStringDictToDict(
 
             if choices:
                 dict_obj = {
-                    time_interval: value
-                    for time_interval, value in dict_string_to_json_string(
-                        dict_string
-                    ).items()
-                    if time_interval in choices
+                    key: value
+                    for key, value in dict_string_to_json_string(dict_string).items()
+                    if key in choices
                 }
             else:
                 dict_obj = dict_string_to_json_string(dict_string)
             setattr(namespace, self.dest, dict_obj)
 
-    return ConvertToList
+    return ConvertToDict

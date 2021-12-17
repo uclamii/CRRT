@@ -147,7 +147,9 @@ class CRRTDataModule(pl.LightningDataModule):
         )
 
         data, labels = train
-        pipeline.fit(pd.DataFrame(data))
+        # flattens each patient,treatment squence into one long df
+        # TODO: This is just a hack until our imputation is more developed
+        pipeline.fit(pd.concat(data))
 
         return pipeline.transform
 
@@ -159,25 +161,28 @@ class CRRTDataModule(pl.LightningDataModule):
         We then convert to Dataset so the Dataloaders can use that.
         """
         # sample = [pt, treatment]
-        sample_ids = X.index.unique().values
+        # TODO: ensure patient is in same split
+        # do not separate separate dates per a patient
+        sample_ids = X.index.droplevel("DATE").unique().values
+        labels = y.groupby(["IP_PATIENT_ID", "Start Date"]).first()
         # patient_ids = X.index.unique("IP_PATIENT_ID").values
         train_val_ids, test_ids = train_test_split(
             sample_ids,
             test_size=self.hparams.test_split_size,
-            stratify=y,
+            stratify=labels,
             random_state=self.seed,
         )
         train_ids, val_ids = train_test_split(
             train_val_ids,
             test_size=self.hparams.val_split_size,
-            stratify=y[train_val_ids],
+            stratify=labels[train_val_ids],
             random_state=self.seed,
         )
 
         # return (X,y) pair, where X is a List of pd dataframes for each pt
         # this is so the dimensions match when we zip them into a pytorch dataset
         return (
-            ([X.loc[id] for id in ids], y[ids])
+            ([X.loc[id] for id in ids], labels[ids])
             # (X.loc[ids], y[ids])
             for ids in (train_ids, val_ids, test_ids)
         )
@@ -252,7 +257,6 @@ class CRRTDataset(Dataset):
         X = self.split[0][index]
         y = self.split[1][index]
         if self.transform:
-            # X = self.transform(X)
-            X = self.transform(X.to_frame().T)
+            X = self.transform(X)
 
         return (Tensor(X), y)
