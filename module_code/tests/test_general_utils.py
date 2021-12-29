@@ -25,13 +25,13 @@ class TestLoading(unittest.TestCase):
             get_preprocessed_file_name(
                 pre_start_delta, None, time_interval, time_window_end, "override_name"
             ),
-            "override_name",
+            "override_name.feather",
         )
 
         # test override with only override arg
         self.assertEqual(
             get_preprocessed_file_name(preprocessed_df_file="override_name"),
-            "override_name",
+            "override_name.feather",
         )
 
         # test all years, months, and days specified, test no years specified

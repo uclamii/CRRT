@@ -9,6 +9,7 @@ from scipy.stats import skew
 from module_code.data.longitudinal_utils import (
     aggregate_cat_feature,
     aggregate_ctn_feature,
+    get_time_window_mask,
     apply_time_window_mask,
     UNIVERSAL_TIME_COL_NAME,
 )
@@ -228,7 +229,6 @@ class TestAggregateFeature(unittest.TestCase):
         self.assertTrue(correct_df.equals(df))
 
 
-# TODO: these might need to change because i moved calculating the time window out of internal fxns so we're not doing it over and over again
 class TestWindowMask(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -238,145 +238,86 @@ class TestWindowMask(unittest.TestCase):
                 "2019-03-05",
                 "2020-04-06",
                 "2020-04-06",
-                "2018-02-04",
-                "2019-03-05",
-                "2020-04-06",
             ]
         )
-        self.ndays_on_crrt = [1, 2, 3, 4, 5, 6, 7]
+        self.ndays_on_crrt = [1, 2, 2, 2]
         self.end_dates = [
             start_date + timedelta(days=ndays)
             for start_date, ndays in zip(self.start_dates, self.ndays_on_crrt)
         ]
         self.outcomes_df = pd.DataFrame(
             {
-                "IP_PATIENT_ID": range(len(self.start_dates)),
-                "Start Date": self.start_dates,
                 "End Date": self.end_dates,
-            }
+            },
+            index=[list(range(len(self.start_dates))), self.start_dates]
         )
+        self.outcomes_df.index.names = ["IP_PATIENT_ID", "Start Date"]
 
-    def test_pre_start_delta_only(self):
+    def _create_patient_df(self):
         """
-        Pts have at least {0,1,2} day(s) of data before/after start.
         All pts have data on start date.
         """
-        deltas = [(1, 1), (1, 2), (2, 1), (2, 2), (0, 1), (1, 0), (0, 0)]
+        # create daily patient delta within the window specified by delta. all pts have data on start date
+        deltas = [(2, 2), (0, 1/24), (1/24, 0), (0, 0)]
         agg_dates = []
         pt_ids = []
+        start_dates = []
         for pt_id, (start_date, (days_before, days_after)) in enumerate(
             zip(self.start_dates, deltas)
         ):
-            # add an entry for each day before
-            for b in range(1, days_before + 1):
-                agg_dates.append(start_date - timedelta(days=b))
+            # add an entry for start date
+            agg_dates.append(start_date)
+            pt_ids.append(pt_id)
+            start_dates.append(start_date)
+            # add an entry for each day before, consider partial days
+            for b in np.arange(min(1, days_before) if days_before > 0 else 1,
+                               days_before + 1):
+                agg_dates.append(start_date - timedelta(days=float(b)))
                 pt_ids.append(pt_id)
-            # add an entry for each day after, includes day of start date
-            for a in range(0, days_after + 1):
-                agg_dates.append(start_date + timedelta(days=a))
+                start_dates.append(start_date)
+            # add an entry for each day after, consider partial days
+            for a in np.arange(min(1, days_after) if days_after > 0 else 1,
+                               days_after + 1):
+                agg_dates.append(start_date + timedelta(days=float(a)))
                 pt_ids.append(pt_id)
+                start_dates.append(start_date)
         # enforce datetime
         agg_dates = pd.to_datetime(agg_dates)
+        start_dates = pd.to_datetime(start_dates)
 
         df = pd.DataFrame({"IP_PATIENT_ID": pt_ids, "TIME_COL": agg_dates})
+        return df, start_dates
+
+    def test_delta(self):
+        df, start_dates = self._create_patient_df()
+
         time_windows = [
-            # will exclude those entries from 2 days before start
+            # will exclude features with a timestamp more than 1 day before start and on or after start
             ({"DAYS": 1}, None, "Start Date"),
-            # all entries before start
-            ({"DAYS": 2}, None, "Start Date"),
-            # will include start date
-            ({"DAYS": 1}, None, "End Date"),
-            ({"DAYS": 2}, None, "End Date"),
+            # will exclude features with a timestamp before start; more than 2 days after start; and before end
+            (None, {"DAYS": 2, "MONTHS": 0, "YEARS": 0}, "End Date"),
+            # will exclude features with a timestamp more than 1 day before/after start and before end
+            (
+                {"DAYS": 1, "MONTHS": 0, "YEARS": 0},
+                {"DAYS": 1, "MONTHS": 0, "YEARS": 0},
+                None,
+            ),
+            # will exclude features with a timestamp before start or after end
+            (None, None, "End Date"),
         ]
         correct_df_rows = [
-            [],
-            [],
-            [],
+            [1, 8],
+            [0, 5, 6, 7, 9],
+            [0, 1, 5, 6, 7, 8, 9],
+            [0, 5, 6, 7, 9]
         ]
-        self._test_multiple_windows(time_windows, df, correct_df_rows)
-
-    def test_post_start_delta_only(self):
-        # TODO: fill dates
-        agg_dates = pd.to_datetime([])
-        df = pd.DataFrame(
-            {"IP_PATIENT_ID": range(len(self.start_dates)), "TIME_COL": agg_dates}
-        )
-        time_windows = [
-            (None, {"DAYS": 0, "MONTHS": 0, "YEARS": 0}, None),
-            (None, {"DAYS": 1, "MONTHS": 0, "YEARS": 0}, None),
-        ]
-        correct_df_rows = []
-        self._test_multiple_windows(time_windows, df, correct_df_rows)
-
-    def test_pre_and_post_start_delta(self):
-        # TODO: fill dates
-        agg_dates = pd.to_datetime([])
-        df = pd.DataFrame(
-            {"IP_PATIENT_ID": range(len(self.start_dates)), "TIME_COL": agg_dates}
-        )
-        time_windows = [
-            (
-                {"DAYS": 0, "MONTHS": 0, "YEARS": 0},
-                {"DAYS": 0, "MONTHS": 0, "YEARS": 0},
-                None,
-            ),
-            (
-                {"DAYS": 1, "MONTHS": 0, "YEARS": 0},
-                {"DAYS": 1, "MONTHS": 0, "YEARS": 0},
-                None,
-            ),
-        ]
-        correct_df_rows = []
-        self._test_multiple_windows(time_windows, df, correct_df_rows)
-
-    def test_neither_delta(self):
-        # TODO: fill dates
-        agg_dates = pd.to_datetime([])
-        df = pd.DataFrame(
-            {"IP_PATIENT_ID": range(len(self.start_dates)), "TIME_COL": agg_dates}
-        )
-        time_windows = [
-            (None, None, "End Date"),
-            (None, None, "Start Date"),
-        ]
-        correct_df_rows = []
-        self._test_multiple_windows(time_windows, df, correct_df_rows)
-
-    # TODO: add test cases for picking "End Date" as end point for window
-    def test_edge_cases(self):
-        """Test edge cases of data recorded x hours before/after a cutoff point."""
-        hour_deltas = [23, 24, 25, 48, -23, -24, -25]
-        # TODO: is the 1s for the 24 hour deltas? to send if over the edge?
-        hour_deltas = pd.Series(
-            [timedelta(hours=delta, seconds=1) for delta in hour_deltas]
-        )
-        df = pd.DataFrame(
-            {
-                "IP_PATIENT_ID": range(len(self.start_dates)),
-                "TIME_COL": self.outcomes_df["Start Date"] + hour_deltas,
-            }
-        )
-
-        # TODO: fix for edge cases
-        time_windows = [
-            # pre only
-            ({"DAYS": 0, "MONTHS": 0, "YEARS": 0}, None, "Start Date"),
-            ({"DAYS": 1, "MONTHS": 0, "YEARS": 0}, None, "Start Date"),
-            ({"DAYS": 0, "MONTHS": 0, "YEARS": 0}, None, "End Date"),
-            ({"DAYS": 1, "MONTHS": 0, "YEARS": 0}, None, "End Date"),
-            # post only
-            (None, {"DAYS": 0, "MONTHS": 0, "YEARS": 0}, "Start Date"),
-            (None, {"DAYS": 1, "MONTHS": 0, "YEARS": 0}, "Start Date"),
-            (None, {"DAYS": 0, "MONTHS": 0, "YEARS": 0}, "End Date"),
-            (None, {"DAYS": 1, "MONTHS": 0, "YEARS": 0}, "End Date"),
-        ]
-        correct_df_rows = [[0], [0, 4, 5]]
-        self._test_multiple_windows(time_windows, df, correct_df_rows)
+        self._test_multiple_windows(time_windows, df, start_dates, correct_df_rows)
 
     def _test_multiple_windows(
         self,
         time_windows: List[Tuple[Dict[str, int], Dict[str, int], str]],
         df: pd.DataFrame,
+        start_dates: pd.Series,
         correct_df_rows: List[List[int]],
     ):
         """
@@ -387,12 +328,16 @@ class TestWindowMask(unittest.TestCase):
         for (pre_start_delta, post_start_delta, mask_end), correct_rows in zip(
             time_windows, correct_df_rows
         ):
+            time_mask = get_time_window_mask(self.outcomes_df,
+                                             pre_start_delta,
+                                             post_start_delta,
+                                             mask_end=mask_end if mask_end else "End Date")
             masked_df = apply_time_window_mask(
-                self.outcomes_df,
                 df,
                 "TIME_COL",
-                pre_start_delta,
-                post_start_delta,
-                mask_end=mask_end if mask_end else "End Date",
-            )
-            self.assertTrue(df.iloc[correct_rows].equals(masked_df))
+                time_mask)
+            correct_df = df.copy(deep=True)
+            correct_df["Start Date"] = start_dates
+            correct_df = correct_df.iloc[correct_rows]
+            correct_df.reset_index(drop=True, inplace=True)
+            self.assertTrue(correct_df.equals(masked_df))
