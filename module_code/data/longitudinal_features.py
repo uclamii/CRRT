@@ -21,7 +21,7 @@ CATEGORICAL_COL_REGEX = r"(dx|PHARM_SUBCLASS|pr|CPT)_.*"
 
 def load_diagnoses(
     raw_data_dir: str,
-    dx_file: str = "Encounter_Diagnoses_19-000093_10082020.txt",
+    dx_file: str = "Encounter_Diagnoses.txt",
     time_interval: Optional[str] = None,
     time_window: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
@@ -58,7 +58,7 @@ def load_diagnoses(
 
 def load_vitals(
     raw_data_dir: str,
-    vitals_file: str = "Flowsheet_Vitals_19-000093_10082020.txt",
+    vitals_file: str = "Flowsheet_Vitals.txt",
     time_interval: Optional[str] = None,
     time_window: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
@@ -110,7 +110,7 @@ def split_sbp_and_dbp(vitals_df: pd.DataFrame) -> pd.DataFrame:
 
 def load_medications(
     raw_data_dir: str,
-    rx_file: str = "meds.txt",
+    rx_file: str = "Medications.txt",
     time_interval: Optional[str] = None,
     time_window: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
@@ -136,7 +136,7 @@ def load_medications(
 
 def load_labs(
     raw_data_dir: str,
-    labs_file: str = "Labs_19-000093_10082020.txt",
+    labs_file: str = "Labs.txt",
     time_interval: Optional[str] = None,
     time_window: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
@@ -161,8 +161,8 @@ def load_labs(
 
 def load_problems(
     raw_data_dir: str,
-    problems_file: str = "Problem_Lists_19-000093_10082020.txt",
-    problems_dx_file: str = "problem_list_diagnoses_19-000093_10082020.txt",
+    problems_file: str = "Problem_Lists.txt",
+    problems_dx_file: str = "Problem_List_Diagnoses.txt",
     time_interval: Optional[str] = None,
     time_window: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
@@ -204,7 +204,7 @@ def load_problems(
 
 def load_procedures(
     raw_data_dir: str,
-    procedures_file: str = "Procedures_19-000093_10082020.txt",
+    procedures_file: str = "Procedures.txt",
     time_interval: Optional[str] = None,
     time_window: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:

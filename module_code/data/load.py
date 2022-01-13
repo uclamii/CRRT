@@ -99,9 +99,9 @@ def load_outcomes(
 def load_static_features(
     raw_data_dir: str,
     static_features: List[str] = (
-        "Allergies_19-000093_10082020.txt",
-        "Patient_Demographics_19-000093_10082020.txt",
-        "Social_History_19-000093_10082020.txt",
+        "Allergies.txt",
+        "Patient_Demographics.txt",
+        "Social_History.txt",
     ),
 ) -> pd.DataFrame:
     loading_message("Static Features")
@@ -142,7 +142,7 @@ def load_static_features(
 def map_provider_id_to_type(
     static_df: pd.DataFrame,
     raw_data_dir: str,
-    provider_mapping_file: str = "providers_19-000093_10082020.txt",
+    provider_mapping_file: str = "Providers.txt",
 ) -> pd.DataFrame:
     """There are a bunch of IDs but they mostly all map to the same type, so here we'll use the string name instead of code."""
     provider_mapping = pd.read_csv(join(raw_data_dir, provider_mapping_file))
