@@ -5,7 +5,7 @@ import yaml
 from typing import Dict, Optional
 
 from data.argparse_utils import YAMLStringDictToDict
-from data.pytorch_loaders import CRRTDataModule
+from data.torch_loaders import TorchCRRTDataModule
 from models.longitudinal_models import LongitudinalModel
 
 
@@ -110,7 +110,9 @@ def init_cli_args() -> Namespace:
         default=None,
         help="Name of run under a tracked experiment (logged to mlflow).",
     )
-
+    """
+    This needs to be updated for whatever options were chosen
+    """
     # add args for pytorch lightning datamodule
     p = CRRTDataModule.add_data_args(p)
     # add args for pytorch lightning model

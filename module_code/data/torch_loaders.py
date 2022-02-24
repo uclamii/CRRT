@@ -20,12 +20,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
-
-# X, y
-SplitDataTuple = Tuple[pd.DataFrame, pd.Series]
+from data.base_loaders import AbstractCRRTDataModule, CRRTDataset, SplitDataTuple
 
 
-class CRRTDataModule(pl.LightningDataModule):
+class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
     PAD_VALUE = -1
 
     def __init__(
@@ -69,9 +67,10 @@ class CRRTDataModule(pl.LightningDataModule):
         transform = self.get_post_split_transform(train_tuple)
 
         # set self.train, self.val, self.test
-        self.train = CRRTDataset(train_tuple, transform)
-        self.val = CRRTDataset(val_tuple, transform)
-        self.test = CRRTDataset(test_tuple, transform)
+        self.train = TorchCRRTDataset(train_tuple, transform)
+        self.val = TorchCRRTDataset(val_tuple, transform)
+        self.test = TorchCRRTDataset(test_tuple, transform)
+
 
     def train_dataloader(self):
         return self.get_dataloader(self.train)
@@ -107,6 +106,7 @@ class CRRTDataModule(pl.LightningDataModule):
         X = pad_sequence(X, batch_first=True, padding_value=self.PAD_VALUE)
 
         return (X, y, seq_lens)
+
 
     def get_post_split_transform(self, train: SplitDataTuple) -> Callable:
         """
@@ -151,7 +151,7 @@ class CRRTDataModule(pl.LightningDataModule):
         # TODO: This is just a hack until our imputation is more developed
         pipeline.fit(pd.concat(data))
 
-        return pipeline.transform
+        return pipeline.data_transform
 
     def split_dataset(
         self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
@@ -217,46 +217,10 @@ class CRRTDataModule(pl.LightningDataModule):
         )
         return p
 
-    @classmethod
-    def from_argparse_args(
-        cls,
-        preprocessed_df: np.ndarray,
-        args: Union[Namespace, ArgumentParser],
-        **kwargs
-    ) -> "CRRTDataModule":
-        """
-        Create an instance from CLI arguments.
-        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
-        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.8.3/pytorch_lightning/trainer/trainer.py#L750
-        """
-        if isinstance(args, ArgumentParser):
-            args = cls.parse_argparser(args)
-        params = vars(args)
 
-        # we only want to pass in valid args, the rest may be user specific
-        valid_kwargs = inspect.signature(cls.__init__).parameters
-        data_kwargs = dict(
-            (name, params[name]) for name in valid_kwargs if name in params
-        )
-        data_kwargs.update(**kwargs)
-
-        return cls(preprocessed_df, **data_kwargs)
-
-
-class CRRTDataset(Dataset):
-    def __init__(
-        self, split: SplitDataTuple, transform: Optional[Callable] = None
-    ) -> None:
-        self.split = split
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.split[1])
+class TorchCRRTDataset(CRRTDataset, Dataset):
 
     def __getitem__(self, index: int):
-        X = self.split[0][index]
-        y = self.split[1][index]
-        if self.transform:
-            X = self.transform(X)
+        X, y = super().__getitem__(index)
+        return Tensor(X), y
 
-        return (Tensor(X), y)

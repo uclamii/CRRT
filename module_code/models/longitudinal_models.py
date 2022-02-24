@@ -3,7 +3,6 @@ import inspect
 from typing import Callable, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
-from sklearn.base import TransformerMixin, BaseEstimator
 
 # ML modules
 import torch
@@ -15,16 +14,19 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import torchmetrics
 
+# commented b/c my system can't install sktime because it's 64 bit
+#from sktime.classification.base import BaseClassifier
+#from sktime.classification.hybrid import HIVECOTEV1
+#from sktime.classification.kernel_based import ROCKETClassifier
 
-from sktime.classification.base import BaseClassifier
-from sktime.classification.hybrid import HIVECOTEV1
-from sktime.classification.kernel_based import ROCKETClassifier
-
-from data.pytorch_loaders import CRRTDataModule
+from data.torch_loaders import TorchCRRTDataModule
 from data.argparse_utils import YAMLStringListToList
 
+from exp.utils import seed_everything
+from models.base_model import AbstractCRRTPredictor, AbstractModel
 
-class LongitudinalModel(pl.LightningModule):
+
+class LongitudinalModel(pl.LightningModule, AbstractModel):
     def __init__(
         self,
         seed: int,
@@ -157,7 +159,7 @@ class LongitudinalModel(pl.LightningModule):
     ############################
     #  Initialization Helpers  #
     ############################
-    def build_model(self,) -> Union[Module, BaseClassifier]:
+    def build_model(self,):
         # https://www.sktime.org/en/stable/api_reference/auto_generated/sktime.classification.hybrid.HIVECOTEV1.html
         # TODO: when calling fit in the wrapper class, just call fit on the model on the data, they should work liike sklearn models so the pytorch datamodule can be used even then
         if self.hparams.modeln == "hivecote":
@@ -279,12 +281,7 @@ class LongitudinalModel(pl.LightningModule):
         return p
 
 
-class CRRTPredictor(TransformerMixin, BaseEstimator):
-    """
-    Wrapper predictor class, compatible with sklearn.
-    Uses longitudinal model to do time series classification on tabular data.
-    Implements fit and transform.
-    """
+class CRRTDynamicPredictor(AbstractCRRTPredictor):
 
     def __init__(
         self, patience: int = 5, max_epochs: int = 100, num_gpus: int = 1, **kwargs,
@@ -311,9 +308,9 @@ class CRRTPredictor(TransformerMixin, BaseEstimator):
         """Loads the underlying autoencoder state dict from path."""
         self.longitudinal_model.load_state_dict(load(serialized_model_path))
 
-    def fit(self, data: CRRTDataModule):
+    def fit(self, data: TorchCRRTDataModule):
         """Trains the autoencoder for imputation."""
-        pl.seed_everything(self.seed)
+        seed_everything(self.seed)
         self.data = data
         # self.data.setup()
 
@@ -340,7 +337,7 @@ class CRRTPredictor(TransformerMixin, BaseEstimator):
     @classmethod
     def from_argparse_args(
         cls, args: Union[Namespace, ArgumentParser], **kwargs
-    ) -> "CRRTPredictor":
+    ) -> "AbstractCRRTPredictor":
         """
         Create an instance from CLI arguments.
         **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
