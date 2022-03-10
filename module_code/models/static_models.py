@@ -3,7 +3,6 @@ import inspect
 from typing import Callable, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
-from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
@@ -23,11 +22,11 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 
-from data.pytorch_loaders import CRRTDataModule
+from data.standard_loaders import StdCRRTDataModule
 from data.argparse_utils import YAMLStringListToList
 
-from module_code.exp import seed_everything
-from module_code.models.base_model import AbstractCRRTPredictor, AbstractModel
+from exp.utils import seed_everything
+from models.base_model import AbstractCRRTPredictor, AbstractModel
 
 
 alg_map = {
@@ -95,7 +94,7 @@ class StaticModel(AbstractModel):
         self.model = self.build_model()
         self.metrics = self.configure_metrics(metrics)
 
-    def build_model(self,) -> Union[Module, BaseClassifier]:
+    def build_model(self,):
         if self.modeln in alg_map:
             model_cls = alg_map[self.modeln]
         else:
@@ -150,7 +149,7 @@ class CRRTStaticPredictor(AbstractCRRTPredictor):
         self.static_model.load_state_dict(load(serialized_model_path))
 
     # TODO: this needs to be changed for sklearn-type models
-    def fit(self, data: CRRTDataModule):
+    def fit(self, data: StdCRRTDataModule):
         """Trains the autoencoder for imputation."""
         seed_everything(self.seed)
         self.data = data

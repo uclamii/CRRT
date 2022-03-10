@@ -6,7 +6,9 @@ from typing import Dict, Optional
 
 from data.argparse_utils import YAMLStringDictToDict
 from data.torch_loaders import TorchCRRTDataModule
+from data.standard_loaders import StdCRRTDataModule
 from models.longitudinal_models import LongitudinalModel
+from models.static_models import StaticModel
 
 
 def load_cli_args(args_options_path: str = "options.yml"):
@@ -31,7 +33,7 @@ def load_cli_args(args_options_path: str = "options.yml"):
                 sys.argv += [f"--{k}", str(v)]
 
 
-def init_cli_args() -> Namespace:
+def init_cli_args(mdl_type) -> Namespace:
     """
     Parse commandline args needed to run experiments.
     Basically mostly hyperparams.
@@ -44,7 +46,7 @@ def init_cli_args() -> Namespace:
     p.add_argument(
         "--experiment",
         type=str,
-        choices=["run_cv", "ctn_learning"],
+        choices=["run_cv", "ctn_learning", "static_learning"],
         help="Name of method to run in experiments directory. Name must match exactly. Used to set experiment name in mlflow",
     )
     p.add_argument(
@@ -113,10 +115,18 @@ def init_cli_args() -> Namespace:
     """
     This needs to be updated for whatever options were chosen
     """
-    # add args for pytorch lightning datamodule
-    p = CRRTDataModule.add_data_args(p)
-    # add args for pytorch lightning model
-    p = LongitudinalModel.add_model_args(p)
+    if mdl_type == "dyn":
+        # add args for pytorch lightning datamodule
+        p = TorchCRRTDataModule.add_data_args(p)
+        # add args for pytorch lightning model
+        p = LongitudinalModel.add_model_args(p)
+    elif mdl_type == "static":
+        # add args for pytorch lightning datamodule
+        p = StdCRRTDataModule.add_data_args(p)
+        # add args for pytorch lightning model
+        p = StaticModel.add_model_args(p)
+    else:
+        raise ValueError("Model {} not recognized".format(mdl_type))
 
     # return p.parse_args()
     # Ignore unrecognized args

@@ -151,7 +151,7 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
         # TODO: This is just a hack until our imputation is more developed
         pipeline.fit(pd.concat(data))
 
-        return pipeline.data_transform
+        return pipeline.transform
 
     def split_dataset(
         self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
@@ -216,6 +216,29 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
             help="Percent of train_val dataset to use for validation. Equivalent / real value = (1 - test-split-size) * val-split-size.",
         )
         return p
+
+    @classmethod
+    def from_argparse_args(cls,
+        preprocessed_df: np.ndarray,
+        args: Union[Namespace, ArgumentParser],
+        **kwargs):
+        """
+        Create an instance from CLI arguments.
+        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
+        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.8.3/pytorch_lightning/trainer/trainer.py#L750
+        """
+        if isinstance(args, ArgumentParser):
+            args = cls.parse_argparser(args)
+        params = vars(args)
+
+        # we only want to pass in valid args, the rest may be user specific
+        valid_kwargs = inspect.signature(cls.__init__).parameters
+        data_kwargs = dict(
+            (name, params[name]) for name in valid_kwargs if name in params
+        )
+        data_kwargs.update(**kwargs)
+
+        return cls(preprocessed_df, **data_kwargs)
 
 
 class TorchCRRTDataset(CRRTDataset, Dataset):

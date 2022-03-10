@@ -1,7 +1,8 @@
 from argparse import Namespace
 
-from data.base_loaders import StdCRRTDataModule
+from data.standard_loaders import StdCRRTDataModule
 from models.static_models import CRRTStaticPredictor
+import pandas as pd
 
 
 def static_learning(df: pd.DataFrame, args: Namespace):

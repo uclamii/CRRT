@@ -15,7 +15,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import torchmetrics
 
 # commented b/c my system can't install sktime because it's 64 bit
-#from sktime.classification.base import BaseClassifier
+from sktime.classification.base import BaseClassifier
 #from sktime.classification.hybrid import HIVECOTEV1
 #from sktime.classification.kernel_based import ROCKETClassifier
 
@@ -159,7 +159,7 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
     ############################
     #  Initialization Helpers  #
     ############################
-    def build_model(self,):
+    def build_model(self,) -> Union[Module, BaseClassifier]:
         # https://www.sktime.org/en/stable/api_reference/auto_generated/sktime.classification.hybrid.HIVECOTEV1.html
         # TODO: when calling fit in the wrapper class, just call fit on the model on the data, they should work liike sklearn models so the pytorch datamodule can be used even then
         if self.hparams.modeln == "hivecote":

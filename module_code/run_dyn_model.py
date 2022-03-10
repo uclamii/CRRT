@@ -15,7 +15,7 @@ from utils import get_preprocessed_file_name, load_cli_args, init_cli_args
 
 if __name__ == "__main__":
     load_cli_args()
-    args = init_cli_args()
+    args = init_cli_args("dyn")
     preprocessed_df_fname = get_preprocessed_file_name(
         args.pre_start_delta,
         args.post_start_delta,

@@ -3,19 +3,19 @@ from os.path import join
 import sys
 import pandas as pd
 import time
-import mlflow
 import mlflow.pytorch
 
 from data.preprocess import preprocess_data
 from data.load import merge_features_with_outcome
 from exp.cv import run_cv
+from exp.static_learning import static_learning
 from exp.ctn_learning import continuous_learning
 from utils import get_preprocessed_file_name, load_cli_args, init_cli_args
 
 
 if __name__ == "__main__":
     load_cli_args()
-    args = init_cli_args()
+    args = init_cli_args("static")
     preprocessed_df_fname = get_preprocessed_file_name(
         args.pre_start_delta,
         args.post_start_delta,
@@ -57,6 +57,7 @@ if __name__ == "__main__":
     preprocessed_df = preprocess_data(df)
     experiment_name_to_function = {
         "run_cv": {"fn": run_cv, "args": ()},
+        "static_learning": {"fn": static_learning, "args": (args,)},
         "ctn_learning": {"fn": continuous_learning, "args": (args,)},
     }
     experiment_function = experiment_name_to_function[args.experiment]["fn"]

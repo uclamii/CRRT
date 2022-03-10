@@ -4,6 +4,7 @@ import pandas as pd
 from functools import reduce
 from typing import List
 from data.longitudinal_utils import aggregate_cat_feature
+import math
 
 
 def onehot(
@@ -62,3 +63,10 @@ def read_files_and_combine(
 
     combined = reduce(lambda df1, df2: pd.merge(df1, df2, on=on, how=how), dfs)
     return combined
+
+
+def convert_nans_to_zeros(val):
+    if math.isnan(val):
+        return 0
+    else:
+        return val

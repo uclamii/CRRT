@@ -18,11 +18,12 @@ from sklearn.preprocessing import FunctionTransformer  # , StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import SelectKBest, SelectFwe
 from scipy.stats import pearsonr
 
 from data.longitudinal_features import CATEGORICAL_COL_REGEX, CONTINUOUS_COL_REGEX
 from data.base_loaders import AbstractCRRTDataModule, CRRTDataset, SplitDataTuple
+from data.utils import convert_nans_to_zeros
 
 
 class StdCRRTDataModule(AbstractCRRTDataModule):
@@ -72,15 +73,15 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         train_tuple, val_tuple, test_tuple = self.split_dataset(X, y)
 
         # fit pipeline on train, call transform in get_item of dataset
-        data_transform = self.get_post_split_transform(train_tuple)
+        self.data_transform = self.get_post_split_transform(train_tuple)
 
         # feature selection
-        ft_select_transform = self.get_post_split_features(train_tuple)
+        self.ft_select_transform = self.get_post_split_features(train_tuple)
 
         # set self.train, self.val, self.test
-        self.train = CRRTDataset(train_tuple, data_transform, ft_select_transform)
-        self.val = CRRTDataset(val_tuple, data_transform, ft_select_transform)
-        self.test = CRRTDataset(test_tuple, data_transform, ft_select_transform)
+        self.train = CRRTDataset(train_tuple, self.data_transform, self.ft_select_transform)
+        self.val = CRRTDataset(val_tuple, self.data_transform, self.ft_select_transform)
+        self.test = CRRTDataset(test_tuple, self.data_transform, self.ft_select_transform)
 
     def get_post_split_transform(self, train: SplitDataTuple) -> Callable:
         """
@@ -111,7 +112,7 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         data, labels = train
         pipeline.fit(data)
 
-        return pipeline.data_transform
+        return pipeline.transform
 
     def get_post_split_features(self, train: SplitDataTuple) -> Callable:
         """
@@ -122,14 +123,17 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         if self.kbest and self.corr_thresh:
             raise ValueError("Both kbest and corr_thresh are not None")
         if self.kbest:
-            feature_transform = SelectKBest(lambda X,y : [pearsonr(x,y)[0] for x in X], k=self.kbest)
+            feature_transform = SelectKBest(lambda X, y: [convert_nans_to_zeros(np.abs(pearsonr(x, y)[0])) for x in X],
+                                            k=self.kbest)
         elif self.corr_thresh:
-            feature_transform = SelectFwe(lambda x, y: [[pearsonr(x,y)[0], 1-pearsonr(x,y)[0]] for x in X],
+            feature_transform = SelectFwe(lambda X, y: [[convert_nans_to_zeros(np.abs(pearsonr(x, y)[0])),
+                                                         1-convert_nans_to_zeros(pearsonr(x, y)[0])] for x in X],
                                           alpha=1-self.corr_thresh)
         else:
             # passthrough transform
-            feature_transform = SelectKBest(lambda X,y : [pearsonr(x,y)[0] for x in X], k="all")
-        return feature_transform.fit(data, labels)
+            feature_transform = SelectKBest(lambda X, y: [0 for x in X], k="all")
+        feature_transform.fit(self.data_transform(data), labels)
+        return feature_transform.transform
 
     def split_dataset(
         self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
@@ -140,9 +144,9 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         """
         # sample = [pt, treatment]
         # TODO: ensure patient is in same split
-        # do not separate separate dates per a patient
-        sample_ids = X.index.droplevel("DATE").unique().values
-        labels = y.groupby(["IP_PATIENT_ID", "Start Date"]).first()
+        # ensure data is split by patient
+        sample_ids = X.index.droplevel(["Start Date", "DATE"]).unique().values
+        labels = y.groupby("IP_PATIENT_ID").first()
         # patient_ids = X.index.unique("IP_PATIENT_ID").values
         train_val_ids, test_ids = train_test_split(
             sample_ids,
@@ -160,7 +164,7 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         # return (X,y) pair, where X is a List of pd dataframes for each pt
         # this is so the dimensions match when we zip them into a pytorch dataset
         return (
-            (X.loc[ids], labels[ids])
+            (X.reset_index(level=["Start Date", "DATE"]).loc[ids].set_index(["Start Date", "DATE"], append=True), labels[ids])
             # (X.loc[ids], y[ids])
             for ids in (train_ids, val_ids, test_ids)
         )
@@ -198,4 +202,24 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
             help="Name of outcome column in outcomes table or preprocessed df.",
         )
         return p
+
+    @classmethod
+    def from_argparse_args(cls,
+        preprocessed_df: np.ndarray,
+        args: Union[Namespace, ArgumentParser],
+        **kwargs):
+        """
+        Create an instance from CLI arguments.
+        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
+        """
+        params = vars(args)
+        # we only want to pass in valid args, the rest may be user specific
+        valid_kwargs = inspect.signature(cls.__init__).parameters
+        data_kwargs = dict(
+            (name, params[name]) for name in valid_kwargs if name in params
+        )
+        data_kwargs.update(**kwargs)
+
+        return cls(preprocessed_df, **data_kwargs)
+
 
