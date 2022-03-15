@@ -1,33 +1,24 @@
-from argparse import ArgumentParser, Namespace
-import inspect
+from argparse import ArgumentParser
 from typing import Callable, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
-import pytorch_lightning as pl
-from torch import Tensor
-from torch.utils.data import DataLoader, Dataset
-from torch.nn.utils.rnn import pad_sequence
 
 # from sktime.transformations.series.impute import Imputer
 # explicitly require this experimental feature
 # from sklearn.experimental import enable_iterative_imputer  # noqa
 from sklearn.impute import SimpleImputer
-
-# from sklearn.impute import KNNImputer
-from sklearn.preprocessing import FunctionTransformer  # , StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.feature_selection import SelectKBest, SelectFwe
-from scipy.stats import pearsonr
+from sklearn.feature_selection import SelectKBest
 
-from data.longitudinal_features import CATEGORICAL_COL_REGEX, CONTINUOUS_COL_REGEX
-from data.base_loaders import AbstractCRRTDataModule, CRRTDataset, SplitDataTuple
-from data.utils import convert_nans_to_zeros
+# Local
+from data.longitudinal_features import CATEGORICAL_COL_REGEX
+from data.base_loaders import AbstractCRRTDataModule, CRRTDataset, DataLabelTuple
+from module_code.data.utils import SelectThreshold, f_pearsonr
 
 
-class StdCRRTDataModule(AbstractCRRTDataModule):
-
+class SklearnCRRTDataModule(AbstractCRRTDataModule):
     def __init__(
         self,
         preprocessed_df: pd.DataFrame,
@@ -37,7 +28,7 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         # val comes from train := (1 - test_split_size) * val_split_size
         val_split_size: float,
         kbest=None,
-        corr_thresh=None
+        corr_thresh=None,
     ):
         super().__init__()
         self.seed = seed
@@ -48,9 +39,7 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         self.categorical_columns = preprocessed_df.filter(
             regex=CATEGORICAL_COL_REGEX, axis=1
         ).columns
-        self.ctn_columns = preprocessed_df.filter(
-            regex=CONTINUOUS_COL_REGEX, axis=1
-        ).columns
+        self.ctn_columns = preprocessed_df.columns.difference(self.categorical_columns)
         self.kbest = kbest
         self.corr_thresh = corr_thresh
 
@@ -79,11 +68,15 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         self.ft_select_transform = self.get_post_split_features(train_tuple)
 
         # set self.train, self.val, self.test
-        self.train = CRRTDataset(train_tuple, self.data_transform, self.ft_select_transform)
+        self.train = CRRTDataset(
+            train_tuple, self.data_transform, self.ft_select_transform
+        )
         self.val = CRRTDataset(val_tuple, self.data_transform, self.ft_select_transform)
-        self.test = CRRTDataset(test_tuple, self.data_transform, self.ft_select_transform)
+        self.test = CRRTDataset(
+            test_tuple, self.data_transform, self.ft_select_transform
+        )
 
-    def get_post_split_transform(self, train: SplitDataTuple) -> Callable:
+    def get_post_split_transform(self, train: DataLabelTuple) -> Callable:
         """
         The serialized preprocessed df should alreayd have dealth with categorical variables and aggregated them as counts, so we only deal with numeric / continuous variables.
         """
@@ -106,6 +99,7 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
                 ),
                 # zero out everything else
                 ("simple-impute", SimpleImputer(strategy="constant", fill_value=0)),
+                ("feature-selection", self.get_feature_selection()),
             ]
         )
 
@@ -114,30 +108,25 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
 
         return pipeline.transform
 
-    def get_post_split_features(self, train: SplitDataTuple) -> Callable:
+    def get_feature_selection(self) -> Callable:
         """
         Fit the feature selection transform based on either the k best features or the number of features
         above a correlation threshold. Passthrough option also available.
         """
-        data, labels = train
+        # TODO: Test these work as intended
         if self.kbest and self.corr_thresh:
             raise ValueError("Both kbest and corr_thresh are not None")
         if self.kbest:
-            feature_transform = SelectKBest(lambda X, y: [convert_nans_to_zeros(np.abs(pearsonr(x, y)[0])) for x in X],
-                                            k=self.kbest)
+            # TODO: maybe want to update sklearn and use https://scikit-learn.org/stable/modules/generated/sklearn.feature_selection.r_regression.html#sklearn.feature_selection.r_regression
+            return SelectKBest(f_pearsonr, k=self.kbest)
         elif self.corr_thresh:
-            feature_transform = SelectFwe(lambda X, y: [[convert_nans_to_zeros(np.abs(pearsonr(x, y)[0])),
-                                                         1-convert_nans_to_zeros(pearsonr(x, y)[0])] for x in X],
-                                          alpha=1-self.corr_thresh)
-        else:
-            # passthrough transform
-            feature_transform = SelectKBest(lambda X, y: [0 for x in X], k="all")
-        feature_transform.fit(self.data_transform(data), labels)
-        return feature_transform.transform
+            return SelectThreshold(f_pearsonr, threshold=self.corr_thresh)
+        # passthrough transform
+        return SelectKBest(lambda X, y: np.zeros(X.shape[1]), k="all")
 
     def split_dataset(
         self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
-    ) -> Tuple[SplitDataTuple, SplitDataTuple, SplitDataTuple]:
+    ) -> Tuple[DataLabelTuple, DataLabelTuple, DataLabelTuple]:
         """
         Splitting with stratification using sklearn.
         We then convert to Dataset so the Dataloaders can use that.
@@ -164,7 +153,12 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
         # return (X,y) pair, where X is a List of pd dataframes for each pt
         # this is so the dimensions match when we zip them into a pytorch dataset
         return (
-            (X.reset_index(level=["Start Date", "DATE"]).loc[ids].set_index(["Start Date", "DATE"], append=True), labels[ids])
+            (
+                X.reset_index(level=["Start Date", "DATE"])
+                .loc[ids]
+                .set_index(["Start Date", "DATE"], append=True),
+                labels[ids],
+            )
             # (X.loc[ids], y[ids])
             for ids in (train_ids, val_ids, test_ids)
         )
@@ -202,24 +196,3 @@ class StdCRRTDataModule(AbstractCRRTDataModule):
             help="Name of outcome column in outcomes table or preprocessed df.",
         )
         return p
-
-    @classmethod
-    def from_argparse_args(cls,
-        preprocessed_df: np.ndarray,
-        args: Union[Namespace, ArgumentParser],
-        **kwargs):
-        """
-        Create an instance from CLI arguments.
-        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
-        """
-        params = vars(args)
-        # we only want to pass in valid args, the rest may be user specific
-        valid_kwargs = inspect.signature(cls.__init__).parameters
-        data_kwargs = dict(
-            (name, params[name]) for name in valid_kwargs if name in params
-        )
-        data_kwargs.update(**kwargs)
-
-        return cls(preprocessed_df, **data_kwargs)
-
-
