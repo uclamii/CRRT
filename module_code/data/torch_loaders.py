@@ -1,5 +1,4 @@
-from argparse import ArgumentParser, Namespace
-import inspect
+from argparse import ArgumentParser
 from typing import Callable, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
@@ -14,13 +13,12 @@ from torch.nn.utils.rnn import pad_sequence
 from sklearn.impute import SimpleImputer
 
 # from sklearn.impute import KNNImputer
-from sklearn.preprocessing import FunctionTransformer  # , StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
-from data.base_loaders import AbstractCRRTDataModule, CRRTDataset, SplitDataTuple
+from data.base_loaders import AbstractCRRTDataModule, CRRTDataset, DataLabelTuple
 
 
 class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
@@ -71,7 +69,6 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
         self.val = TorchCRRTDataset(val_tuple, transform)
         self.test = TorchCRRTDataset(test_tuple, transform)
 
-
     def train_dataloader(self):
         return self.get_dataloader(self.train)
 
@@ -95,7 +92,7 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
 
     def batch_collate(
         self, batch: Tuple[np.ndarray, int], transform: Callable = None
-    ) -> SplitDataTuple:
+    ) -> DataLabelTuple:
         """
         Batch is a list of tuples with (example, label).
         Pad the variable length sequences, add seq lens, and enforce tensor.
@@ -107,8 +104,7 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
 
         return (X, y, seq_lens)
 
-
-    def get_post_split_transform(self, train: SplitDataTuple) -> Callable:
+    def get_post_split_transform(self, train: DataLabelTuple) -> Callable:
         """
         The serialized preprocessed df should alreayd have dealth with categorical variables and aggregated them as counts, so we only deal with numeric / continuous variables.
         """
@@ -151,11 +147,11 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
         # TODO: This is just a hack until our imputation is more developed
         pipeline.fit(pd.concat(data))
 
-        return pipeline.transform
+        return pipeline.data_transform
 
     def split_dataset(
         self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
-    ) -> Tuple[SplitDataTuple, SplitDataTuple, SplitDataTuple]:
+    ) -> Tuple[DataLabelTuple, DataLabelTuple, DataLabelTuple]:
         """
         Splitting with stratification using sklearn.
         We then convert to Dataset so the Dataloaders can use that.
@@ -217,33 +213,8 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
         )
         return p
 
-    @classmethod
-    def from_argparse_args(cls,
-        preprocessed_df: np.ndarray,
-        args: Union[Namespace, ArgumentParser],
-        **kwargs):
-        """
-        Create an instance from CLI arguments.
-        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
-        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.8.3/pytorch_lightning/trainer/trainer.py#L750
-        """
-        if isinstance(args, ArgumentParser):
-            args = cls.parse_argparser(args)
-        params = vars(args)
-
-        # we only want to pass in valid args, the rest may be user specific
-        valid_kwargs = inspect.signature(cls.__init__).parameters
-        data_kwargs = dict(
-            (name, params[name]) for name in valid_kwargs if name in params
-        )
-        data_kwargs.update(**kwargs)
-
-        return cls(preprocessed_df, **data_kwargs)
-
 
 class TorchCRRTDataset(CRRTDataset, Dataset):
-
     def __getitem__(self, index: int):
         X, y = super().__getitem__(index)
         return Tensor(X), y
-

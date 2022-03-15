@@ -1,6 +1,5 @@
-from argparse import ArgumentParser, Namespace
-import inspect
-from typing import Callable, Dict, List, Optional, Union
+from argparse import ArgumentParser
+from typing import Callable, List, Union
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
@@ -22,11 +21,11 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 
-from data.standard_loaders import StdCRRTDataModule
+from data.standard_loaders import SklearnCRRTDataModule
 from data.argparse_utils import YAMLStringListToList
 
 from exp.utils import seed_everything
-from models.base_model import AbstractCRRTPredictor, AbstractModel
+from models.base_model import BaseSklearnPredictor, AbstractModel
 
 
 alg_map = {
@@ -37,7 +36,7 @@ alg_map = {
     "dt": DecisionTreeClassifier,
     "rf": RandomForestClassifier,
     "lgb": LGBMClassifier,
-    "xgb": XGBClassifier
+    "xgb": XGBClassifier,
 }
 
 metric_map = {
@@ -80,15 +79,9 @@ metric_map = {
 
 
 class StaticModel(AbstractModel):
-    def __init__(
-        self,
-        seed: int,
-        modeln: str,
-        metrics: List[str],
-        **model_kwargs
-    ):
+    def __init__(self, seed: int, modeln: str, metrics: List[str], **model_kwargs):
         super().__init__()
-        self.seed = seed,
+        self.seed = (seed,)
         self.modeln = modeln
         self.model_kwargs = model_kwargs
         self.model = self.build_model()
@@ -130,7 +123,7 @@ class StaticModel(AbstractModel):
         return p
 
 
-class CRRTStaticPredictor(AbstractCRRTPredictor):
+class CRRTStaticPredictor(BaseSklearnPredictor):
     """
     Wrapper predictor class, compatible with sklearn.
     Uses longitudinal model to do time series classification on tabular data.
@@ -142,14 +135,14 @@ class CRRTStaticPredictor(AbstractCRRTPredictor):
     ):
         self.static_model = StaticModel(**kwargs)
 
-
     # TODO: This needs to be changed for the serialization of the static models
     def load_model(self, serialized_model_path: str) -> None:
         """Loads the underlying autoencoder state dict from path."""
-        self.static_model.load_state_dict(load(serialized_model_path))
+        # self.static_model.load_state_dict(load(serialized_model_path))
+        pass
 
     # TODO: this needs to be changed for sklearn-type models
-    def fit(self, data: StdCRRTDataModule):
+    def fit(self, data: SklearnCRRTDataModule):
         """Trains the autoencoder for imputation."""
         seed_everything(self.seed)
         self.data = data
@@ -164,40 +157,6 @@ class CRRTStaticPredictor(AbstractCRRTPredictor):
     # TODO: this also needs to be changed for static model
     def transform(self, X: Union[np.ndarray, pd.DataFrame],) -> np.ndarray:
         """Applies trained model to given data X."""
-        if isinstance(X, pd.DataFrame):
-            X = torch.tensor(
-                X.values * 1, device=self.longitudinal_model.device, dtype=torch.float
-            )
-        else:
-            X = torch.tensor(
-                X, device=self.longitudinal_model.device, dtype=torch.float
-            )
         outputs = self.longitudinal_model(X)  # .detach().cpu().numpy()
 
         return outputs
-
-    @classmethod
-    def from_argparse_args(
-        cls, args: Union[Namespace, ArgumentParser], **kwargs
-    ) -> "AbstractCRRTPredictor":
-        """
-        Create an instance from CLI arguments.
-        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
-        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.8.3/pytorch_lightning/trainer/trainer.py#L750
-        """
-        if isinstance(args, ArgumentParser):
-            args = cls.parse_argparser(args)
-        params = vars(args)
-
-        # we only want to pass in valid args, the rest may be user specific
-        # returns a immutable dict MappingProxyType, want to combine so copy
-        valid_kwargs = inspect.signature(cls.__init__).parameters.copy()
-        valid_kwargs.update(
-            inspect.signature(StaticModel.__init__).parameters.copy()
-        )
-        data_kwargs = dict(
-            (name, params[name]) for name in valid_kwargs if name in params
-        )
-        data_kwargs.update(**kwargs)
-
-        return cls(**data_kwargs)

@@ -1,13 +1,11 @@
+import inspect
 from typing import Callable, List, Union
 from argparse import ArgumentParser, Namespace
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 from sklearn.base import TransformerMixin, BaseEstimator
-import numpy as np
-import pandas as pd
 
 
 class AbstractModel(ABC):
-
     @abstractmethod
     def build_model(self,):
         pass
@@ -23,28 +21,33 @@ class AbstractModel(ABC):
         pass
 
 
-class AbstractCRRTPredictor(TransformerMixin, BaseEstimator, metaclass=ABCMeta):
-
+class BaseSklearnPredictor(TransformerMixin, BaseEstimator):
     @abstractmethod
     def load_model(self, serialized_model_path: str) -> None:
         pass
 
-    @abstractmethod
-    def fit(self, data):
-        pass
-
-    @abstractmethod
-    def transform(self, X: Union[np.ndarray, pd.DataFrame],) -> np.ndarray:
-        pass
-
     @classmethod
-    @abstractmethod
     def from_argparse_args(
         cls, args: Union[Namespace, ArgumentParser], **kwargs
-    ) -> "AbstractCRRTPredictor":
+    ) -> "BaseSklearnPredictor":
         """
         Create an instance from CLI arguments.
         **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
-        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.8.3/pytorch_lightning/trainer/trainer.py#L750
+        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/-1.8.3/pytorch_lightning/trainer/trainer.py#L750
         """
-        pass
+        if isinstance(args, ArgumentParser):
+            args = cls.parse_argparser(args)
+        params = vars(args)
+
+        # we only want to pass in valid args, the rest may be user specific
+        # returns a immutable dict MappingProxyType, want to combine so copy
+        valid_kwargs = inspect.signature(cls.__init__).parameters.copy()
+        valid_kwargs.update(
+            inspect.signature(BaseSklearnPredictor.__init__).parameters.copy()
+        )
+        data_kwargs = dict(
+            (name, params[name]) for name in valid_kwargs if name in params
+        )
+        data_kwargs.update(**kwargs)
+
+        return cls(**data_kwargs)

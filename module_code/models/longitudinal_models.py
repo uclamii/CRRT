@@ -1,5 +1,4 @@
-from argparse import ArgumentParser, Namespace
-import inspect
+from argparse import ArgumentParser
 from typing import Callable, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
@@ -16,14 +15,13 @@ import torchmetrics
 
 # commented b/c my system can't install sktime because it's 64 bit
 from sktime.classification.base import BaseClassifier
-#from sktime.classification.hybrid import HIVECOTEV1
-#from sktime.classification.kernel_based import ROCKETClassifier
+from sktime.classification.hybrid import HIVECOTEV1
+from sktime.classification.kernel_based import ROCKETClassifier
 
+# Local
 from data.torch_loaders import TorchCRRTDataModule
 from data.argparse_utils import YAMLStringListToList
-
-from exp.utils import seed_everything
-from models.base_model import AbstractCRRTPredictor, AbstractModel
+from models.base_model import BaseSklearnPredictor, AbstractModel
 
 
 class LongitudinalModel(pl.LightningModule, AbstractModel):
@@ -281,8 +279,7 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
         return p
 
 
-class CRRTDynamicPredictor(AbstractCRRTPredictor):
-
+class CRRTDynamicPredictor(BaseSklearnPredictor):
     def __init__(
         self, patience: int = 5, max_epochs: int = 100, num_gpus: int = 1, **kwargs,
     ):
@@ -310,7 +307,7 @@ class CRRTDynamicPredictor(AbstractCRRTPredictor):
 
     def fit(self, data: TorchCRRTDataModule):
         """Trains the autoencoder for imputation."""
-        seed_everything(self.seed)
+        pl.seed_everything(self.seed)
         self.data = data
         # self.data.setup()
 
@@ -333,29 +330,3 @@ class CRRTDynamicPredictor(AbstractCRRTPredictor):
         outputs = self.longitudinal_model(X)  # .detach().cpu().numpy()
 
         return outputs
-
-    @classmethod
-    def from_argparse_args(
-        cls, args: Union[Namespace, ArgumentParser], **kwargs
-    ) -> "AbstractCRRTPredictor":
-        """
-        Create an instance from CLI arguments.
-        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
-        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.8.3/pytorch_lightning/trainer/trainer.py#L750
-        """
-        if isinstance(args, ArgumentParser):
-            args = cls.parse_argparser(args)
-        params = vars(args)
-
-        # we only want to pass in valid args, the rest may be user specific
-        # returns a immutable dict MappingProxyType, want to combine so copy
-        valid_kwargs = inspect.signature(cls.__init__).parameters.copy()
-        valid_kwargs.update(
-            inspect.signature(LongitudinalModel.__init__).parameters.copy()
-        )
-        data_kwargs = dict(
-            (name, params[name]) for name in valid_kwargs if name in params
-        )
-        data_kwargs.update(**kwargs)
-
-        return cls(**data_kwargs)
