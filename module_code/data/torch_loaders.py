@@ -184,9 +184,7 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
         )
 
     @staticmethod
-    def add_data_args(parent_parser: ArgumentParser) -> ArgumentParser:
-        # TODO: Add required when using ctn learning or somethign
-        p = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_data_args(p: ArgumentParser) -> ArgumentParser:
         p.add_argument(
             "--batch-size", type=int, help="Batch size to use when training.",
         )

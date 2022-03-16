@@ -17,7 +17,7 @@ class AbstractModel(ABC):
 
     @staticmethod
     @abstractmethod
-    def add_model_args(parent_parser: ArgumentParser) -> ArgumentParser:
+    def add_model_args(parent_parsers: List[ArgumentParser]) -> ArgumentParser:
         pass
 
 

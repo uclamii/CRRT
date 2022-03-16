@@ -104,17 +104,16 @@ class StaticModel(AbstractModel):
         return [metric_map[metric] for metric in metric_names]
 
     @staticmethod
-    def add_model_args(parent_parser: ArgumentParser) -> ArgumentParser:
-        p = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_args(p: ArgumentParser) -> ArgumentParser:
         p.add_argument(
-            "--modeln",
+            "--static-modeln",
             type=str,
             default="lgr",
             choices=["lgr", "svm", "knn", "nb", "dt", "rf", "lgb", "xgb"],
             help="Name of model to use for learning.",
         )
         p.add_argument(
-            "--metrics",
+            "--static-metrics",
             type=str,
             action=YAMLStringListToList(str),
             help="(List of comma-separated strings) Name of Pytorch Metrics from torchmetrics.",

@@ -216,18 +216,16 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
         return [getattr(torchmetrics, metric)() for metric in metric_names]
 
     @staticmethod
-    def add_model_args(parent_parser: ArgumentParser) -> ArgumentParser:
-        # TODO: Add required when using ctn learning or somethign
-        p = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_args(p: ArgumentParser) -> ArgumentParser:
         p.add_argument(
-            "--modeln",
+            "--dynamic-modeln",
             type=str,
             default="lstm",
             choices=["lstm", "hivecote", "rocket"],
             help="Name of model to use for continuous learning.",
         )
         p.add_argument(
-            "--metrics",
+            "--dynamic-metrics",
             type=str,
             action=YAMLStringListToList(str),
             help="(List of comma-separated strings) Name of Pytorch Metrics from torchmetrics.",

@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from typing import Callable, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 
@@ -15,7 +15,7 @@ from sklearn.feature_selection import SelectKBest
 # Local
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
 from data.base_loaders import AbstractCRRTDataModule, CRRTDataset, DataLabelTuple
-from module_code.data.utils import SelectThreshold, f_pearsonr
+from data.utils import SelectThreshold, f_pearsonr
 
 
 class SklearnCRRTDataModule(AbstractCRRTDataModule):
@@ -39,7 +39,6 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.categorical_columns = preprocessed_df.filter(
             regex=CATEGORICAL_COL_REGEX, axis=1
         ).columns
-        self.ctn_columns = preprocessed_df.columns.difference(self.categorical_columns)
         self.kbest = kbest
         self.corr_thresh = corr_thresh
 
@@ -51,6 +50,8 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             self.preprocessed_df.drop(self.outcome_col_name, axis=1),
             self.preprocessed_df[self.outcome_col_name],
         )
+        # set this here instead of init so that outcome col isn't included
+        self.ctn_columns = X.columns.difference(self.categorical_columns)
         # its the same for all the sequences, just take one
         # y = y.groupby("IP_PATIENT_ID").last()
 
@@ -82,6 +83,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         """
         pipeline = Pipeline(
             [
+                ("feature-selection", self.get_feature_selection()),
                 # impute for continuous columns
                 (
                     "ctn-fillna",
@@ -99,12 +101,11 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 ),
                 # zero out everything else
                 ("simple-impute", SimpleImputer(strategy="constant", fill_value=0)),
-                ("feature-selection", self.get_feature_selection()),
             ]
         )
 
         data, labels = train
-        pipeline.fit(data)
+        pipeline.fit(data, labels)
 
         return pipeline.transform
 
@@ -113,6 +114,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         Fit the feature selection transform based on either the k best features or the number of features
         above a correlation threshold. Passthrough option also available.
         """
+
         # TODO: Test these work as intended
         if self.kbest and self.corr_thresh:
             raise ValueError("Both kbest and corr_thresh are not None")
@@ -164,9 +166,10 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         )
 
     @staticmethod
-    def add_data_args(parent_parser: ArgumentParser) -> ArgumentParser:
+    # def add_data_args(parent_parsers: List[ArgumentParser]) -> ArgumentParser:
+    def add_data_args(p: ArgumentParser) -> ArgumentParser:
         # TODO: Add required when using ctn learning or somethign
-        p = ArgumentParser(parents=[parent_parser], add_help=False)
+        # p = ArgumentParser(parents=parent_parsers, add_help=False)
         p.add_argument(
             "--outcome-col-name",
             type=str,
