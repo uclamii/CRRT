@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from typing import Callable, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
@@ -219,6 +219,7 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
     def add_model_args(p: ArgumentParser) -> ArgumentParser:
         p.add_argument(
             "--dynamic-modeln",
+            dest="modeln",
             type=str,
             default="lstm",
             choices=["lstm", "hivecote", "rocket"],
@@ -226,6 +227,7 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
         )
         p.add_argument(
             "--dynamic-metrics",
+            dest="metrics",
             type=str,
             action=YAMLStringListToList(str),
             help="(List of comma-separated strings) Name of Pytorch Metrics from torchmetrics.",
@@ -298,6 +300,12 @@ class CRRTDynamicPredictor(BaseSklearnPredictor):
             profiler="simple",  # or "advanced" which is more granular
             weights_summary="full",
         )
+
+    @classmethod
+    def from_argparse_args(
+        cls, args: Union[Namespace, ArgumentParser], **kwargs
+    ) -> "CRRTDynamicPredictor":
+        return super().from_argparse_args(LongitudinalModel, args, **kwargs)
 
     def load_model(self, serialized_model_path: str) -> None:
         """Loads the underlying autoencoder state dict from path."""

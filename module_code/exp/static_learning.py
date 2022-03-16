@@ -10,5 +10,5 @@ def static_learning(df: pd.DataFrame, args: Namespace):
     data = SklearnCRRTDataModule.from_argparse_args(df, args)
     data.setup()
     # Then need to update the predictor
-    model = CRRTStaticPredictor.from_argparse_args(args, nfeatures=data.nfeatures)
+    model = CRRTStaticPredictor.from_argparse_args(args)
     model.fit(data)

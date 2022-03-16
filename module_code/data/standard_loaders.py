@@ -65,17 +65,13 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # fit pipeline on train, call transform in get_item of dataset
         self.data_transform = self.get_post_split_transform(train_tuple)
 
-        # feature selection
-        self.ft_select_transform = self.get_post_split_features(train_tuple)
-
         # set self.train, self.val, self.test
-        self.train = CRRTDataset(
-            train_tuple, self.data_transform, self.ft_select_transform
-        )
-        self.val = CRRTDataset(val_tuple, self.data_transform, self.ft_select_transform)
-        self.test = CRRTDataset(
-            test_tuple, self.data_transform, self.ft_select_transform
-        )
+        # self.train = CRRTDataset(train_tuple, self.data_transform)
+        # self.val = CRRTDataset(val_tuple, self.data_transform)
+        # self.test = CRRTDataset(test_tuple, self.data_transform)
+        self.train = train_tuple
+        self.val = val_tuple
+        self.test = test_tuple
 
     def get_post_split_transform(self, train: DataLabelTuple) -> Callable:
         """
@@ -83,7 +79,6 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         """
         pipeline = Pipeline(
             [
-                ("feature-selection", self.get_feature_selection()),
                 # impute for continuous columns
                 (
                     "ctn-fillna",
@@ -101,6 +96,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 ),
                 # zero out everything else
                 ("simple-impute", SimpleImputer(strategy="constant", fill_value=0)),
+                # ("feature-selection", self.get_feature_selection()),
             ]
         )
 

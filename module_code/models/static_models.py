@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from typing import Callable, List, Union
 import numpy as np
 import pandas as pd
@@ -26,7 +26,6 @@ from data.argparse_utils import YAMLStringListToList
 
 from exp.utils import seed_everything
 from models.base_model import BaseSklearnPredictor, AbstractModel
-
 
 alg_map = {
     "lgr": LogisticRegression,
@@ -81,7 +80,7 @@ metric_map = {
 class StaticModel(AbstractModel):
     def __init__(self, seed: int, modeln: str, metrics: List[str], **model_kwargs):
         super().__init__()
-        self.seed = (seed,)
+        self.seed = seed
         self.modeln = modeln
         self.model_kwargs = model_kwargs
         self.model = self.build_model()
@@ -107,6 +106,7 @@ class StaticModel(AbstractModel):
     def add_model_args(p: ArgumentParser) -> ArgumentParser:
         p.add_argument(
             "--static-modeln",
+            dest="modeln",
             type=str,
             default="lgr",
             choices=["lgr", "svm", "knn", "nb", "dt", "rf", "lgb", "xgb"],
@@ -114,6 +114,7 @@ class StaticModel(AbstractModel):
         )
         p.add_argument(
             "--static-metrics",
+            dest="metrics",
             type=str,
             action=YAMLStringListToList(str),
             help="(List of comma-separated strings) Name of Pytorch Metrics from torchmetrics.",
@@ -130,9 +131,16 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     """
 
     def __init__(
-        self, **kwargs,
+        self, seed: int, **kwargs,
     ):
-        self.static_model = StaticModel(**kwargs)
+        self.seed = seed
+        self.static_model = StaticModel(seed=seed, **kwargs)
+
+    @classmethod
+    def from_argparse_args(
+        cls, args: Union[Namespace, ArgumentParser], **kwargs
+    ) -> "CRRTStaticPredictor":
+        return super().from_argparse_args(StaticModel, args, **kwargs)
 
     # TODO: This needs to be changed for the serialization of the static models
     def load_model(self, serialized_model_path: str) -> None:
@@ -140,22 +148,20 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         # self.static_model.load_state_dict(load(serialized_model_path))
         pass
 
-    # TODO: this needs to be changed for sklearn-type models
     def fit(self, data: SklearnCRRTDataModule):
         """Trains the autoencoder for imputation."""
         seed_everything(self.seed)
         self.data = data
         # self.data.setup()
 
-        self.trainer.fit(self.longitudinal_model, datamodule=self.data)
+        self.static_model.model.fit(*self.data.train)
         if self.runtest:
-            self.trainer.test(self.longitudinal_model, datamodule=self.data)
+            self.static_model.model.test(*self.data.test)
 
         return self
 
-    # TODO: this also needs to be changed for static model
     def transform(self, X: Union[np.ndarray, pd.DataFrame],) -> np.ndarray:
         """Applies trained model to given data X."""
-        outputs = self.longitudinal_model(X)  # .detach().cpu().numpy()
+        outputs = self.static_model.model(X)  # .detach().cpu().numpy()
 
         return outputs
