@@ -43,7 +43,7 @@ def get_num_prev_crrt_treatments(df: pd.DataFrame):
 def load_outcomes(
     raw_data_dir: str,
     group_by: List[str],
-    outcome_file: str = "CRRT Deidentified 2017-2019.csv",
+    outcome_file: str = "CRRT Deidentified 2015-2021YTD_VF.xlsx",
 ) -> pd.DataFrame:
     """
     Load outcomes from outcomes file.
@@ -52,10 +52,12 @@ def load_outcomes(
     """
 
     loading_message("Outcomes")
-    outcomes_df = pd.read_csv(join(raw_data_dir, outcome_file))
+    outcomes_df = pd.read_excel(
+        join(raw_data_dir, outcome_file), sheet_name="2015-2021 YTD"
+    )
 
     positive_outcomes = ["Recov. renal funct.", "Transitioned to HD"]
-    negative_outcomes = ["Palliative Care", "Expired "]
+    negative_outcomes = ["Comfort Care", "Expired "]
     outcome_cols = positive_outcomes + negative_outcomes
 
     #### Filtering ####

@@ -59,7 +59,7 @@ class TestAggregateFeature(unittest.TestCase):
             }
         )
 
-    @patch("module_code.data.longitudinal_utils.time_window_mask")
+    @patch("module_code.data.longitudinal_utils.get_time_window_mask")
     def test_no_time_interval_ctn(self, mock_masked_df):
         """
         Tests aggregation of continuous features without using a time interval.
@@ -104,7 +104,6 @@ class TestAggregateFeature(unittest.TestCase):
         mock_masked_df.return_value = self.ctn_df
 
         df = aggregate_ctn_feature(
-            self.ctn_df,
             self.ctn_df,
             agg_on="Value Names",
             agg_values_col=self.agg_on,
@@ -233,12 +232,7 @@ class TestWindowMask(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.start_dates = pd.to_datetime(
-            [  # yyyy-mm-dd
-                "2018-02-04",
-                "2019-03-05",
-                "2020-04-06",
-                "2020-04-06",
-            ]
+            ["2018-02-04", "2019-03-05", "2020-04-06", "2020-04-06",]  # yyyy-mm-dd
         )
         self.ndays_on_crrt = [1, 2, 2, 2]
         self.end_dates = [
@@ -246,10 +240,8 @@ class TestWindowMask(unittest.TestCase):
             for start_date, ndays in zip(self.start_dates, self.ndays_on_crrt)
         ]
         self.outcomes_df = pd.DataFrame(
-            {
-                "End Date": self.end_dates,
-            },
-            index=[list(range(len(self.start_dates))), self.start_dates]
+            {"End Date": self.end_dates,},
+            index=[list(range(len(self.start_dates))), self.start_dates],
         )
         self.outcomes_df.index.names = ["IP_PATIENT_ID", "Start Date"]
 
@@ -258,7 +250,7 @@ class TestWindowMask(unittest.TestCase):
         All pts have data on start date.
         """
         # create daily patient delta within the window specified by delta. all pts have data on start date
-        deltas = [(2, 2), (0, 1/24), (1/24, 0), (0, 0)]
+        deltas = [(2, 2), (0, 1 / 24), (1 / 24, 0), (0, 0)]
         agg_dates = []
         pt_ids = []
         start_dates = []
@@ -270,14 +262,16 @@ class TestWindowMask(unittest.TestCase):
             pt_ids.append(pt_id)
             start_dates.append(start_date)
             # add an entry for each day before, consider partial days
-            for b in np.arange(min(1, days_before) if days_before > 0 else 1,
-                               days_before + 1):
+            for b in np.arange(
+                min(1, days_before) if days_before > 0 else 1, days_before + 1
+            ):
                 agg_dates.append(start_date - timedelta(days=float(b)))
                 pt_ids.append(pt_id)
                 start_dates.append(start_date)
             # add an entry for each day after, consider partial days
-            for a in np.arange(min(1, days_after) if days_after > 0 else 1,
-                               days_after + 1):
+            for a in np.arange(
+                min(1, days_after) if days_after > 0 else 1, days_after + 1
+            ):
                 agg_dates.append(start_date + timedelta(days=float(a)))
                 pt_ids.append(pt_id)
                 start_dates.append(start_date)
@@ -309,7 +303,7 @@ class TestWindowMask(unittest.TestCase):
             [1, 8],
             [0, 5, 6, 7, 9],
             [0, 1, 5, 6, 7, 8, 9],
-            [0, 5, 6, 7, 9]
+            [0, 5, 6, 7, 9],
         ]
         self._test_multiple_windows(time_windows, df, start_dates, correct_df_rows)
 
@@ -328,14 +322,13 @@ class TestWindowMask(unittest.TestCase):
         for (pre_start_delta, post_start_delta, mask_end), correct_rows in zip(
             time_windows, correct_df_rows
         ):
-            time_mask = get_time_window_mask(self.outcomes_df,
-                                             pre_start_delta,
-                                             post_start_delta,
-                                             mask_end=mask_end if mask_end else "End Date")
-            masked_df = apply_time_window_mask(
-                df,
-                "TIME_COL",
-                time_mask)
+            time_mask = get_time_window_mask(
+                self.outcomes_df,
+                pre_start_delta,
+                post_start_delta,
+                mask_end=mask_end if mask_end else "End Date",
+            )
+            masked_df = apply_time_window_mask(df, "TIME_COL", time_mask)
             correct_df = df.copy(deep=True)
             correct_df["Start Date"] = start_dates
             correct_df = correct_df.iloc[correct_rows]

@@ -13,7 +13,7 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
         "ICU",
         "Recov. renal funct.",
         "Transitioned to HD",
-        "Palliative Care",
+        "Comfort Care",
         "Expired ",
     ]
     df = df.drop(drop_columns, axis=1)

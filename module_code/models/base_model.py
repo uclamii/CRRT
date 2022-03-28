@@ -1,5 +1,5 @@
 import inspect
-from typing import Callable, List, Type, TypeVar, Union
+from typing import Callable, List, Type, Union
 from argparse import ArgumentParser, Namespace
 from abc import ABC, abstractmethod
 from sklearn.base import TransformerMixin, BaseEstimator

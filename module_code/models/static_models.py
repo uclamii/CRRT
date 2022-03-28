@@ -21,7 +21,7 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 
-from data.standard_loaders import SklearnCRRTDataModule
+from data.sklearn_loaders import SklearnCRRTDataModule
 from data.argparse_utils import YAMLStringListToList
 
 from exp.utils import seed_everything
@@ -131,9 +131,10 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     """
 
     def __init__(
-        self, seed: int, **kwargs,
+        self, seed: int, runtest: bool, **kwargs,
     ):
         self.seed = seed
+        self.runtest = runtest
         self.static_model = StaticModel(seed=seed, **kwargs)
 
     @classmethod

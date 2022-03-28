@@ -73,6 +73,13 @@ def read_files_and_combine(
     return combined
 
 
+def convert_nans_to_zeros(val):
+    if math.isnan(val):
+        return 0
+    else:
+        return val
+
+
 def f_pearsonr(X: pd.DataFrame, labels: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
     """
     Use correlation of features to the labels as a scoring function
@@ -80,14 +87,7 @@ def f_pearsonr(X: pd.DataFrame, labels: pd.Series) -> Tuple[np.ndarray, np.ndarr
     """
     scores_and_pvalues = X.apply(lambda feature: pearsonr(feature, labels), axis=0)
     scores, pvalues = zip(*scores_and_pvalues)
-    return (scores, pvalues)
-
-
-def convert_nans_to_zeros(val):
-    if math.isnan(val):
-        return 0
-    else:
-        return val
+    return (convert_nans_to_zeros(scores), pvalues)
 
 
 class SelectThreshold(_BaseFilter):

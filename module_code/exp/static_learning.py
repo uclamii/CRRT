@@ -1,6 +1,6 @@
 from argparse import Namespace
 
-from data.standard_loaders import SklearnCRRTDataModule
+from data.sklearn_loaders import SklearnCRRTDataModule
 from models.static_models import CRRTStaticPredictor
 import pandas as pd
 

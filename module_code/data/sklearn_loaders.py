@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 
@@ -14,7 +14,7 @@ from sklearn.feature_selection import SelectKBest
 
 # Local
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
-from data.base_loaders import AbstractCRRTDataModule, CRRTDataset, DataLabelTuple
+from data.base_loaders import AbstractCRRTDataModule, DataLabelTuple
 from data.utils import SelectThreshold, f_pearsonr
 
 
@@ -69,9 +69,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # self.train = CRRTDataset(train_tuple, self.data_transform)
         # self.val = CRRTDataset(val_tuple, self.data_transform)
         # self.test = CRRTDataset(test_tuple, self.data_transform)
-        self.train = train_tuple
-        self.val = val_tuple
-        self.test = test_tuple
+        self.train = (self.data_transform(train_tuple[0]), train_tuple[1])
+        self.val = (self.data_transform(val_tuple[0]), val_tuple[1])
+        self.test = (self.data_transform(test_tuple[0]), test_tuple[1])
 
     def get_post_split_transform(self, train: DataLabelTuple) -> Callable:
         """
@@ -96,7 +96,8 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 ),
                 # zero out everything else
                 ("simple-impute", SimpleImputer(strategy="constant", fill_value=0)),
-                # ("feature-selection", self.get_feature_selection()),
+                # feature-selection doesn't allow NaNs in the data, impute first.
+                ("feature-selection", self.get_feature_selection()),
             ]
         )
 
@@ -132,7 +133,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # sample = [pt, treatment]
         # TODO: ensure patient is in same split
         # ensure data is split by patient
-        sample_ids = X.index.droplevel(["Start Date", "DATE"]).unique().values
+        sample_ids = X.index.droplevel(["Start Date"]).unique().values
         labels = y.groupby("IP_PATIENT_ID").first()
         # patient_ids = X.index.unique("IP_PATIENT_ID").values
         train_val_ids, test_ids = train_test_split(
@@ -150,16 +151,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
 
         # return (X,y) pair, where X is a List of pd dataframes for each pt
         # this is so the dimensions match when we zip them into a pytorch dataset
-        return (
-            (
-                X.reset_index(level=["Start Date", "DATE"])
-                .loc[ids]
-                .set_index(["Start Date", "DATE"], append=True),
-                labels[ids],
-            )
-            # (X.loc[ids], y[ids])
-            for ids in (train_ids, val_ids, test_ids)
-        )
+        # Note that like this, we will end up with a set size larger than we expect
+        # Because we stratify by ID and certain patients may have more treatments than others.
+        return ((X.loc[ids], y[ids]) for ids in (train_ids, val_ids, test_ids))
 
     @staticmethod
     # def add_data_args(parent_parsers: List[ArgumentParser]) -> ArgumentParser:

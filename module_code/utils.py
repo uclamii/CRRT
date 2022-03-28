@@ -6,7 +6,7 @@ from typing import Dict, Optional
 
 from data.argparse_utils import YAMLStringDictToDict
 from data.torch_loaders import TorchCRRTDataModule
-from data.standard_loaders import SklearnCRRTDataModule
+from data.sklearn_loaders import SklearnCRRTDataModule
 from models.longitudinal_models import LongitudinalModel
 from models.static_models import StaticModel
 
@@ -87,6 +87,12 @@ def add_global_args(
         type=str,
         default=None,
         help="Name of run under a tracked experiment (logged to mlflow).",
+    )
+    logging_p.add_argument(
+        "--runtest",
+        type=bool,
+        default=False,
+        help="Whether or not to run testing on the predictive model.",
     )
 
     # To be able to add these to the subparsers without conflicts
