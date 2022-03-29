@@ -1,4 +1,5 @@
 from argparse import ArgumentParser, Namespace
+from datetime import timedelta
 import pandas as pd
 from os.path import join
 
@@ -9,8 +10,8 @@ MAPPING_FILE = "Patient_Identifiers.txt"
 
 
 def main(args: Namespace):
-    mapping = pd.read_csv(join(args.raw_data_dir, MAPPING_FILE))
-    mapping = dict(zip(mapping["MRN"], mapping["IP_PATIENT_ID"]))
+    mapping_df = pd.read_csv(join(args.raw_data_dir, MAPPING_FILE))
+    mapping = dict(zip(mapping_df["MRN"], mapping_df["IP_PATIENT_ID"]))
 
     unmapped = pd.read_excel(join(args.raw_data_dir, args.file_to_map), sheet_name=None)
     for sheetname, df in unmapped.items():
@@ -24,6 +25,23 @@ def main(args: Namespace):
         # Rename column from MRN to deidendified patient ID
         df.rename(columns={mrn_col: "IP_PATIENT_ID"}, inplace=True)
         #     df.drop(mrn_col, axis=1, inplace=True)
+
+        #### Construct Start Date ####  -- For convenience of time-windows --
+        # Enforce date column to datetime object
+        df["End Date"] = pd.to_datetime(df["End Date"])
+
+        # CRRT Start Date = End Date - (Days on CRRT - 1)
+        # e.g. finish on the 10th and 3 days of CRRT: 8th (1), 9th (2), 10th (3)
+        offset = df["CRRT Total Days"].map(lambda days: timedelta(days=days - 1))
+        df["Start Date"] = df["End Date"] - offset
+
+        #### Construct Age ####
+        # Calculate age at start of CRRT by using date of birth
+        dob = df.merge(mapping_df, how="left", on="IP_PATIENT_ID")["DOB"]
+        df["Age"] = ((pd.DatetimeIndex(df["Start Date"]) - pd.DatetimeIndex(dob)).days / 365)
+
+        #### Get rid of "Unnamed" Column in Excel ####
+        df = df.drop(df.columns[df.columns.str.contains('^Unnamed')], axis=1)
 
     with pd.ExcelWriter(join(args.raw_data_dir, args.deidentified_file)) as writer:
         for sheetname, df in unmapped.items():

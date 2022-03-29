@@ -229,4 +229,11 @@ def load_procedures(
         time_window=time_window,
     )
 
+    # Any indication of inpatient surgery before crrt start
+    surgery_indicator = "CPT_SECTION_CPT1-C"
+    # TODO: filter to the past week regardless of time window. or just check the codes directly?
+    procedures_feature["Surgery in Past Week"] = (
+        procedures_feature[surgery_indicator] > 0
+    )
+
     return procedures_feature

@@ -1,8 +1,8 @@
 from functools import reduce
 from os.path import join
+from pathlib import Path
 import pandas as pd
 from typing import Dict, List, Optional
-from datetime import timedelta
 
 from data.longitudinal_features import (
     load_diagnoses,
@@ -61,15 +61,12 @@ def load_outcomes(
     outcome_cols = positive_outcomes + negative_outcomes
 
     #### Filtering ####
-    # Exclude pediatric data
-    exclude_peds_mask = (
-        outcomes_df["Hospital name"] != "UCLA MEDICAL CENTER- PEDIATRICS"
-    )
+    # Exclude pediatric data, adults considered 21+
+    is_adult_mask = outcomes_df["Age"] >= 21
     # Each row should have exactly 1 1.0 value (one-hot of the 4 cols)
     exactly_one_outcome_mask = outcomes_df[outcome_cols].fillna(0).sum(axis=1) == 1
 
-    # TODO: Should i drop the bad row?
-    outcomes_df = outcomes_df[exclude_peds_mask & exactly_one_outcome_mask]
+    outcomes_df = outcomes_df[is_adult_mask & exactly_one_outcome_mask]
 
     # Drop missing pt ids
     outcomes_df = outcomes_df.dropna(subset=["IP_PATIENT_ID"])
@@ -79,15 +76,10 @@ def load_outcomes(
     recommend_crrt = (outcomes_df[positive_outcomes] == 1).any(axis=1)
     outcomes_df["recommend_crrt"] = recommend_crrt.astype(int)
 
-    #### Construct Start Date ####  -- For convenience of time-windows --
-    # Enforce date column to datetime object
-    outcomes_df["End Date"] = pd.to_datetime(outcomes_df["End Date"])
+    #### Construct other features ####
+    outcomes_df["CRRT Year"] = pd.DatetimeIndex(outcomes_df["End Date"]).year
 
-    # CRRT Start Date = End Date - (Days on CRRT - 1)
-    # e.g. finish on the 10th and 3 days of CRRT: 8th (1), 9th (2), 10th (3)
-    offset = outcomes_df["CRRT Total Days"].map(lambda days: timedelta(days=days - 1))
-    outcomes_df["Start Date"] = outcomes_df["End Date"] - offset
-
+    #### Contruct Num Previous Treatments ####
     # patients can have multiple treatments but each (pt, treatment) is 1 sample
     # we dont want to lose info of previous treatments, so we add as feature
     num_prev_crrt_treatments = get_num_prev_crrt_treatments(outcomes_df)
@@ -112,15 +104,14 @@ def load_static_features(
     static_df = read_files_and_combine(static_features, raw_data_dir, how="outer")
     static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
-    # TODO: only do this if file doesn't exist
-    # save description of allergen code as a df mapping
-    allergen_code_to_description_mapping = static_df[
-        ["ALLERGEN_ID", "DESCRIPTION"]
-    ].set_index("ALLERGEN_ID")
-    allergen_code_to_description_mapping.to_csv(
-        join(raw_data_dir, "allergen_code_mapping.csv")
-    )
-    # drop allergen description since we won't be using it
+    allergen_code_mapping_fname = join(raw_data_dir, "allergen_code_mapping.csv")
+    if not Path(allergen_code_mapping_fname).exists():
+        # save description of allergen code as a df mapping
+        allergen_code_to_description_mapping = static_df[
+            ["ALLERGEN_ID", "DESCRIPTION"]
+        ].set_index("ALLERGEN_ID")
+        allergen_code_to_description_mapping.to_csv(allergen_code_mapping_fname)
+        # drop allergen description since we won't be using it
     static_df.drop("DESCRIPTION", axis=1)
 
     # only onehot encode multicategorical columns (not binary)
@@ -137,6 +128,9 @@ def load_static_features(
     # will aggregate if there's more than one entry per pateint.
     # this should only affect allergens, the other entries should not be affected
     static_df = onehot(static_df, cols_to_onehot, sum_across_patient=True)
+
+    # Get rid of age, we will use the age constructed in outcomes
+    static_df.drop("AGE", axis=1)
 
     return static_df
 
