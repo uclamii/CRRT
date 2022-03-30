@@ -16,7 +16,7 @@ from hcuppy.cpt import CPT
 Prefix a OR b = (a|b) followed by _ and 1+ characters of any char.
 { diagnoses: dx, meds: PHARM_SUBCLASS, problems: pr, procedures: CPT }
 """
-CATEGORICAL_COL_REGEX = r"(dx|PHARM_SUBCLASS|pr|CPT)_.*"
+CATEGORICAL_COL_REGEX = r"(dx|PHARM_SUBCLASS|pr|CPT|)_.*"
 # CONTINUOUS_COL_REGEX = r"(VITAL_SIGN|RESULT)_.*"
 
 

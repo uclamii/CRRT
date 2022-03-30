@@ -38,7 +38,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.val_split_size = val_split_size
         self.categorical_columns = preprocessed_df.filter(
             regex=CATEGORICAL_COL_REGEX, axis=1
-        ).columns
+        ).columns.union(["Surgery in Past Week"])
         self.kbest = kbest
         self.corr_thresh = corr_thresh
 
