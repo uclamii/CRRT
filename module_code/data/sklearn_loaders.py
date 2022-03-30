@@ -17,6 +17,10 @@ from data.longitudinal_features import CATEGORICAL_COL_REGEX
 from data.base_loaders import AbstractCRRTDataModule, DataLabelTuple
 from data.utils import SelectThreshold, f_pearsonr
 
+ADDITIONAL_CATEGORICAL_COLS = [
+    "Surgery in Past Week",
+    # "liver_pt_indicator", "heart_pt_indidcator", "infection_pt_indicator"
+]
 
 class SklearnCRRTDataModule(AbstractCRRTDataModule):
     def __init__(
@@ -38,7 +42,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.val_split_size = val_split_size
         self.categorical_columns = preprocessed_df.filter(
             regex=CATEGORICAL_COL_REGEX, axis=1
-        ).columns.union(["Surgery in Past Week"])
+        ).columns.union(ADDITIONAL_CATEGORICAL_COLS)
         self.kbest = kbest
         self.corr_thresh = corr_thresh
 

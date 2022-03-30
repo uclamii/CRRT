@@ -39,6 +39,29 @@ def get_num_prev_crrt_treatments(df: pd.DataFrame):
     )  # add start date as second index
     return num_prev_crrt_treatments
 
+def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Look in diagnoses and problems for ccs codes related to heart, liver, and infection."""
+    tables = ["dx", "pr"]
+    types = [
+        {"name": "liver", "codes": [150, 151]},
+        {"name": "heart", "codes": [100, 101, 103, 104, 107, 108]},
+        {"name": "infection", "codes": [7, 8]},
+    ]
+
+    for pt_type in types:
+        masks = []
+        for code in pt_type["codes"]:
+            for table_name in tables:
+                column_name = f"{table_name}_CCS_CODE_{code}"
+                # codes may not be in the dataset
+                if column_name in df:
+                    masks.append(df[column_name] > 0)
+
+        df[f"{pt_type['name']}_pt_indicator"] = reduce(
+            lambda maska, maskb: maska | maskb,
+            masks
+        )
+    return df
 
 def load_outcomes(
     raw_data_dir: str,

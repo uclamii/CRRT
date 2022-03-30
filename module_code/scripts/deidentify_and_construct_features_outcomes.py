@@ -5,7 +5,6 @@ from os.path import join
 
 from utils import load_cli_args
 
-# will be deleted once mapping is complete
 MAPPING_FILE = "Patient_Identifiers.txt"
 
 
