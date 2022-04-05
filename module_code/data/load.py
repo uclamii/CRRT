@@ -39,13 +39,34 @@ def get_num_prev_crrt_treatments(df: pd.DataFrame):
     )  # add start date as second index
     return num_prev_crrt_treatments
 
+
 def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Look in diagnoses and problems for ccs codes related to heart, liver, and infection."""
     tables = ["dx", "pr"]
     types = [
-        {"name": "liver", "codes": [150, 151]},
-        {"name": "heart", "codes": [100, 101, 103, 104, 107, 108]},
-        {"name": "infection", "codes": [7, 8]},
+        {"name": "liver", "codes": [6, 16, 149, 150, 151, 214, 222]},
+        # TODO: should these be mutually exclusive
+        # could potentially add "shock"/249 to heart too
+        {
+            "name": "heart",
+            "codes": [
+                100,
+                101,
+                102,
+                103,
+                104,
+                105,
+                106,
+                107,
+                108,
+                109,
+                114,
+                115,
+                116,
+                117,
+            ],
+        },
+        {"name": "infection", "codes": [2, 3, 4, 7, 249]},
     ]
 
     for pt_type in types:
@@ -58,10 +79,10 @@ def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
                     masks.append(df[column_name] > 0)
 
         df[f"{pt_type['name']}_pt_indicator"] = reduce(
-            lambda maska, maskb: maska | maskb,
-            masks
+            lambda maska, maskb: maska | maskb, masks
         )
     return df
+
 
 def load_outcomes(
     raw_data_dir: str,
@@ -212,7 +233,9 @@ def merge_features_with_outcome(
 
     longitudinal_dfs = [
         load_diagnoses(
-            raw_data_dir, time_interval=time_interval, time_window=time_window,
+            raw_data_dir,
+            time_interval=time_interval,
+            time_window=time_window,
         ),
         load_vitals(raw_data_dir, time_interval=time_interval, time_window=time_window),
         load_medications(
