@@ -1,5 +1,5 @@
 from argparse import ArgumentParser, Namespace
-from typing import Callable, List, Union
+from typing import Callable, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
@@ -20,7 +20,9 @@ from sklearn.metrics import (
     precision_score,
     confusion_matrix,
 )
+import mlflow
 
+## Local
 from data.sklearn_loaders import SklearnCRRTDataModule
 from data.argparse_utils import YAMLStringListToList
 
@@ -38,6 +40,7 @@ alg_map = {
     "xgb": XGBClassifier,
 }
 
+# gt = ground truth
 metric_map = {
     "auroc": lambda gt, pred_probs, decision_thresh: roc_auc_score(gt, pred_probs),
     "ap": lambda gt, pred_probs, decision_thresh: average_precision_score(
@@ -86,7 +89,7 @@ class StaticModel(AbstractModel):
         self.model = self.build_model()
         self.metrics = self.configure_metrics(metrics)
 
-    def build_model(self,):
+    def build_model(self):
         if self.modeln in alg_map:
             model_cls = alg_map[self.modeln]
         else:
@@ -119,7 +122,6 @@ class StaticModel(AbstractModel):
             action=YAMLStringListToList(str),
             help="(List of comma-separated strings) Name of Pytorch Metrics from torchmetrics.",
         )
-        # TODO: mechanism for incorporating any additional arguments? Actually, Can just be passed by YAML? Can test later
         return p
 
 
@@ -130,9 +132,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     Implements fit and transform.
     """
 
-    def __init__(
-        self, seed: int, runtest: bool, **kwargs,
-    ):
+    def __init__(self, seed: int, runtest: bool, **kwargs):
         self.seed = seed
         self.runtest = runtest
         self.static_model = StaticModel(seed=seed, **kwargs)
@@ -145,24 +145,52 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
     # TODO: This needs to be changed for the serialization of the static models
     def load_model(self, serialized_model_path: str) -> None:
-        """Loads the underlying autoencoder state dict from path."""
-        # self.static_model.load_state_dict(load(serialized_model_path))
         pass
 
     def fit(self, data: SklearnCRRTDataModule):
-        """Trains the autoencoder for imputation."""
         seed_everything(self.seed)
         self.data = data
         # self.data.setup()
 
         self.static_model.model.fit(*self.data.train)
-        if self.runtest:
-            self.static_model.model.test(*self.data.test)
-
         return self
 
-    def transform(self, X: Union[np.ndarray, pd.DataFrame],) -> np.ndarray:
+    def transform(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
         """Applies trained model to given data X."""
-        outputs = self.static_model.model(X)  # .detach().cpu().numpy()
-
+        outputs = self.static_model.model.transform(X)
         return outputs
+
+    def predict_proba(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
+        return self.static_model.model.predict_proba(X)
+
+    def evaluate(
+        self,
+        stage: str,
+        filters: Optional[
+            Dict[str, Union[pd.Series, Callable[[pd.DataFrame], pd.Series]]]
+        ] = None,
+    ):
+        """
+        Can additionally pass filters for subsets to evaluate performance.
+        The filters can be either the bool series filter itself, or a function that produces one given the df.
+        """
+        X, y = getattr(self.data, stage)
+        ## Evaluate on whole dataset ##
+        mlflow.sklearn.eval_and_log_metrics(
+            self.static_model.model, X, y, prefix=f"{self.static_model.modeln}_{stage}_"
+        )
+
+        X = pd.DataFrame(X, columns=self.data.columns)
+        ## Evaluate for each filter ##
+        if filters is not None:
+            for filter_n, filter in filters.items():
+                if isinstance(filter, Callable):
+                    filter = filter(X)
+
+                mlflow.sklearn.eval_and_log_metrics(
+                    self.static_model.model,
+                    # If we don't ask for values sklearn will complain it was fitted without feature names
+                    X.values[filter],
+                    y.values[filter],
+                    prefix=f"{self.static_model.modeln}_{stage}_{filter_n}_",
+                )

@@ -234,6 +234,6 @@ def load_procedures(
     # TODO: filter to the past week regardless of time window. or just check the codes directly?
     procedures_feature["Surgery in Past Week"] = (
         procedures_feature[surgery_indicator] > 0
-    )
+    ).astype(int)
 
     return procedures_feature

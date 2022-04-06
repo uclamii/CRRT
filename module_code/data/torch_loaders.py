@@ -150,7 +150,9 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
         return pipeline.data_transform
 
     def split_dataset(
-        self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
+        self,
+        X: pd.DataFrame,
+        y: Union[pd.Series, np.ndarray],
     ) -> Tuple[DataLabelTuple, DataLabelTuple, DataLabelTuple]:
         """
         Splitting with stratification using sklearn.
@@ -186,7 +188,9 @@ class TorchCRRTDataModule(pl.LightningDataModule, AbstractCRRTDataModule):
     @staticmethod
     def add_data_args(p: ArgumentParser) -> ArgumentParser:
         p.add_argument(
-            "--batch-size", type=int, help="Batch size to use when training.",
+            "--batch-size",
+            type=int,
+            help="Batch size to use when training.",
         )
         p.add_argument(
             "--num-gpus",

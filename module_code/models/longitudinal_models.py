@@ -157,7 +157,7 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
     ############################
     #  Initialization Helpers  #
     ############################
-    def build_model(self,) -> Union[Module, BaseClassifier]:
+    def build_model(self) -> Union[Module, BaseClassifier]:
         # https://www.sktime.org/en/stable/api_reference/auto_generated/sktime.classification.hybrid.HIVECOTEV1.html
         # TODO: when calling fit in the wrapper class, just call fit on the model on the data, they should work liike sklearn models so the pytorch datamodule can be used even then
         if self.hparams.modeln == "hivecote":
@@ -281,7 +281,11 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
 
 class CRRTDynamicPredictor(BaseSklearnPredictor):
     def __init__(
-        self, patience: int = 5, max_epochs: int = 100, num_gpus: int = 1, **kwargs,
+        self,
+        patience: int = 5,
+        max_epochs: int = 100,
+        num_gpus: int = 1,
+        **kwargs,
     ):
         self.seed = kwargs["seed"]
         self.patience = patience
@@ -323,7 +327,10 @@ class CRRTDynamicPredictor(BaseSklearnPredictor):
 
         return self
 
-    def transform(self, X: Union[np.ndarray, pd.DataFrame],) -> np.ndarray:
+    def transform(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+    ) -> np.ndarray:
         """Applies trained model to given data X."""
         if isinstance(X, pd.DataFrame):
             X = torch.tensor(

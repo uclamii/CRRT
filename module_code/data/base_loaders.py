@@ -17,7 +17,9 @@ class AbstractCRRTDataModule(ABC):
 
     @abstractmethod
     def split_dataset(
-        self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
+        self,
+        X: pd.DataFrame,
+        y: Union[pd.Series, np.ndarray],
     ) -> Tuple[DataLabelTuple, DataLabelTuple, DataLabelTuple]:
         pass
 
@@ -54,7 +56,9 @@ class AbstractCRRTDataModule(ABC):
 
 class CRRTDataset:
     def __init__(
-        self, split_data: DataLabelTuple, transform: Optional[Callable] = None,
+        self,
+        split_data: DataLabelTuple,
+        transform: Optional[Callable] = None,
     ) -> None:
         # split can be data from train, val, or test
         self.split_data = split_data

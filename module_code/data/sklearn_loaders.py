@@ -19,8 +19,11 @@ from data.utils import SelectThreshold, f_pearsonr
 
 ADDITIONAL_CATEGORICAL_COLS = [
     "Surgery in Past Week",
-    # "liver_pt_indicator", "heart_pt_indidcator", "infection_pt_indicator"
+    "liver_pt_indicator",
+    "heart_pt_indicator",
+    "infection_pt_indicator",
 ]
+
 
 class SklearnCRRTDataModule(AbstractCRRTDataModule):
     def __init__(
@@ -54,6 +57,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             self.preprocessed_df.drop(self.outcome_col_name, axis=1),
             self.preprocessed_df[self.outcome_col_name],
         )
+        self.columns = X.columns
         # set this here instead of init so that outcome col isn't included
         self.ctn_columns = X.columns.difference(self.categorical_columns)
         # its the same for all the sequences, just take one
@@ -128,7 +132,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         return SelectKBest(lambda X, y: np.zeros(X.shape[1]), k="all")
 
     def split_dataset(
-        self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
+        self,
+        X: pd.DataFrame,
+        y: Union[pd.Series, np.ndarray],
     ) -> Tuple[DataLabelTuple, DataLabelTuple, DataLabelTuple]:
         """
         Splitting with stratification using sklearn.

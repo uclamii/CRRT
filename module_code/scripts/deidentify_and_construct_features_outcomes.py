@@ -37,10 +37,12 @@ def main(args: Namespace):
         #### Construct Age ####
         # Calculate age at start of CRRT by using date of birth
         dob = df.merge(mapping_df, how="left", on="IP_PATIENT_ID")["DOB"]
-        df["Age"] = ((pd.DatetimeIndex(df["Start Date"]) - pd.DatetimeIndex(dob)).days / 365)
+        df["Age"] = (
+            pd.DatetimeIndex(df["Start Date"]) - pd.DatetimeIndex(dob)
+        ).days / 365
 
         #### Get rid of "Unnamed" Column in Excel ####
-        df = df.drop(df.columns[df.columns.str.contains('^Unnamed')], axis=1)
+        df = df.drop(df.columns[df.columns.str.contains("^Unnamed")], axis=1)
 
     with pd.ExcelWriter(join(args.raw_data_dir, args.deidentified_file)) as writer:
         for sheetname, df in unmapped.items():

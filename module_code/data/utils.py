@@ -16,7 +16,9 @@ from data.longitudinal_utils import aggregate_cat_feature
 
 
 def onehot(
-    df: pd.DataFrame, cols_to_onehot: List[str], sum_across_patient: bool = False,
+    df: pd.DataFrame,
+    cols_to_onehot: List[str],
+    sum_across_patient: bool = False,
 ) -> pd.DataFrame:
     """
     One-hot encodes list of features and add it back into the df.
@@ -29,7 +31,8 @@ def onehot(
         # add back into the df, drop the original columns since we have onehot version now
         # we have to merge instead of concat bc agg_cat_features leaves in patient id (for summation)
         return reduce(
-            lambda df1, df2: pd.merge(df1, df2, on="IP_PATIENT_ID"), onehot_dfs,
+            lambda df1, df2: pd.merge(df1, df2, on="IP_PATIENT_ID"),
+            onehot_dfs,
         )
 
     # otherwise, just do normal dummies and concat

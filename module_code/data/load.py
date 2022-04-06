@@ -76,7 +76,7 @@ def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
                 column_name = f"{table_name}_CCS_CODE_{code}"
                 # codes may not be in the dataset
                 if column_name in df:
-                    masks.append(df[column_name] > 0)
+                    masks.append((df[column_name] > 0).astype(int))
 
         df[f"{pt_type['name']}_pt_indicator"] = reduce(
             lambda maska, maskb: maska | maskb, masks

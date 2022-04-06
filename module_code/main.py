@@ -68,6 +68,7 @@ if __name__ == "__main__":
         mlflow.set_experiment(experiment_name=args.experiment)
         # Autologging
         mlflow.pytorch.autolog()
+        mlflow.sklearn.autolog()
 
         with mlflow.start_run(run_name=args.run_name):
             # Log all cli args as tags
