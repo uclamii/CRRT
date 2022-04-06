@@ -1,8 +1,8 @@
 from functools import reduce
 from os.path import join
+from pathlib import Path
 import pandas as pd
 from typing import Dict, List, Optional
-from datetime import timedelta
 
 from data.longitudinal_features import (
     load_diagnoses,
@@ -40,10 +40,54 @@ def get_num_prev_crrt_treatments(df: pd.DataFrame):
     return num_prev_crrt_treatments
 
 
+def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Look in diagnoses and problems for ccs codes related to heart, liver, and infection."""
+    tables = ["dx", "pr"]
+    types = [
+        {"name": "liver", "codes": [6, 16, 149, 150, 151, 214, 222]},
+        # TODO: should these be mutually exclusive
+        # could potentially add "shock"/249 to heart too
+        {
+            "name": "heart",
+            "codes": [
+                100,
+                101,
+                102,
+                103,
+                104,
+                105,
+                106,
+                107,
+                108,
+                109,
+                114,
+                115,
+                116,
+                117,
+            ],
+        },
+        {"name": "infection", "codes": [2, 3, 4, 7, 249]},
+    ]
+
+    for pt_type in types:
+        masks = []
+        for code in pt_type["codes"]:
+            for table_name in tables:
+                column_name = f"{table_name}_CCS_CODE_{code}"
+                # codes may not be in the dataset
+                if column_name in df:
+                    masks.append((df[column_name] > 0).astype(int))
+
+        df[f"{pt_type['name']}_pt_indicator"] = reduce(
+            lambda maska, maskb: maska | maskb, masks
+        )
+    return df
+
+
 def load_outcomes(
     raw_data_dir: str,
     group_by: List[str],
-    outcome_file: str = "CRRT Deidentified 2017-2019.csv",
+    outcome_file: str = "CRRT Deidentified 2015-2021YTD_VF.xlsx",
 ) -> pd.DataFrame:
     """
     Load outcomes from outcomes file.
@@ -52,22 +96,21 @@ def load_outcomes(
     """
 
     loading_message("Outcomes")
-    outcomes_df = pd.read_csv(join(raw_data_dir, outcome_file))
+    outcomes_df = pd.read_excel(
+        join(raw_data_dir, outcome_file), sheet_name="2015-2021 YTD"
+    )
 
     positive_outcomes = ["Recov. renal funct.", "Transitioned to HD"]
-    negative_outcomes = ["Palliative Care", "Expired "]
+    negative_outcomes = ["Comfort Care", "Expired "]
     outcome_cols = positive_outcomes + negative_outcomes
 
     #### Filtering ####
-    # Exclude pediatric data
-    exclude_peds_mask = (
-        outcomes_df["Hospital name"] != "UCLA MEDICAL CENTER- PEDIATRICS"
-    )
+    # Exclude pediatric data, adults considered 21+
+    is_adult_mask = outcomes_df["Age"] >= 21
     # Each row should have exactly 1 1.0 value (one-hot of the 4 cols)
     exactly_one_outcome_mask = outcomes_df[outcome_cols].fillna(0).sum(axis=1) == 1
 
-    # TODO: Should i drop the bad row?
-    outcomes_df = outcomes_df[exclude_peds_mask & exactly_one_outcome_mask]
+    outcomes_df = outcomes_df[is_adult_mask & exactly_one_outcome_mask]
 
     # Drop missing pt ids
     outcomes_df = outcomes_df.dropna(subset=["IP_PATIENT_ID"])
@@ -77,15 +120,10 @@ def load_outcomes(
     recommend_crrt = (outcomes_df[positive_outcomes] == 1).any(axis=1)
     outcomes_df["recommend_crrt"] = recommend_crrt.astype(int)
 
-    #### Construct Start Date ####  -- For convenience of time-windows --
-    # Enforce date column to datetime object
-    outcomes_df["End Date"] = pd.to_datetime(outcomes_df["End Date"])
+    #### Construct other features ####
+    outcomes_df["CRRT Year"] = pd.DatetimeIndex(outcomes_df["End Date"]).year
 
-    # CRRT Start Date = End Date - (Days on CRRT - 1)
-    # e.g. finish on the 10th and 3 days of CRRT: 8th (1), 9th (2), 10th (3)
-    offset = outcomes_df["CRRT Total Days"].map(lambda days: timedelta(days=days - 1))
-    outcomes_df["Start Date"] = outcomes_df["End Date"] - offset
-
+    #### Contruct Num Previous Treatments ####
     # patients can have multiple treatments but each (pt, treatment) is 1 sample
     # we dont want to lose info of previous treatments, so we add as feature
     num_prev_crrt_treatments = get_num_prev_crrt_treatments(outcomes_df)
@@ -110,15 +148,14 @@ def load_static_features(
     static_df = read_files_and_combine(static_features, raw_data_dir, how="outer")
     static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
-    # TODO: only do this if file doesn't exist
-    # save description of allergen code as a df mapping
-    allergen_code_to_description_mapping = static_df[
-        ["ALLERGEN_ID", "DESCRIPTION"]
-    ].set_index("ALLERGEN_ID")
-    allergen_code_to_description_mapping.to_csv(
-        join(raw_data_dir, "allergen_code_mapping.csv")
-    )
-    # drop allergen description since we won't be using it
+    allergen_code_mapping_fname = join(raw_data_dir, "allergen_code_mapping.csv")
+    if not Path(allergen_code_mapping_fname).exists():
+        # save description of allergen code as a df mapping
+        allergen_code_to_description_mapping = static_df[
+            ["ALLERGEN_ID", "DESCRIPTION"]
+        ].set_index("ALLERGEN_ID")
+        allergen_code_to_description_mapping.to_csv(allergen_code_mapping_fname)
+        # drop allergen description since we won't be using it
     static_df.drop("DESCRIPTION", axis=1)
 
     # only onehot encode multicategorical columns (not binary)
@@ -135,6 +172,9 @@ def load_static_features(
     # will aggregate if there's more than one entry per pateint.
     # this should only affect allergens, the other entries should not be affected
     static_df = onehot(static_df, cols_to_onehot, sum_across_patient=True)
+
+    # Get rid of age, we will use the age constructed in outcomes
+    static_df.drop("AGE", axis=1)
 
     return static_df
 
@@ -193,7 +233,9 @@ def merge_features_with_outcome(
 
     longitudinal_dfs = [
         load_diagnoses(
-            raw_data_dir, time_interval=time_interval, time_window=time_window,
+            raw_data_dir,
+            time_interval=time_interval,
+            time_window=time_window,
         ),
         load_vitals(raw_data_dir, time_interval=time_interval, time_window=time_window),
         load_medications(

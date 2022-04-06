@@ -16,7 +16,8 @@ from hcuppy.cpt import CPT
 Prefix a OR b = (a|b) followed by _ and 1+ characters of any char.
 { diagnoses: dx, meds: PHARM_SUBCLASS, problems: pr, procedures: CPT }
 """
-CATEGORICAL_COL_REGEX = r"(dx|PHARM_SUBCLASS|pr|CPT)_.*"
+CATEGORICAL_COL_REGEX = r"(dx|PHARM_SUBCLASS|pr|CPT|)_.*"
+# CONTINUOUS_COL_REGEX = r"(VITAL_SIGN|RESULT)_.*"
 
 
 def load_diagnoses(
@@ -227,5 +228,12 @@ def load_procedures(
         time_interval=time_interval,
         time_window=time_window,
     )
+
+    # Any indication of inpatient surgery before crrt start
+    surgery_indicator = "CPT_SECTION_CPT1-C"
+    # TODO: filter to the past week regardless of time window. or just check the codes directly?
+    procedures_feature["Surgery in Past Week"] = (
+        procedures_feature[surgery_indicator] > 0
+    ).astype(int)
 
     return procedures_feature

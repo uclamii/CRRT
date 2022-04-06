@@ -20,6 +20,8 @@ from module_code.data.longitudinal_utils import (
 class TestAggregateFeature(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
+        # Start date doesn't matter for these tests (we mock the time window applied anyway) so just pick all the same start date.
+        self.start_dates = ["2018-01-01"] * 7
         self.time_col_values = [  # yyyy-mm-dd
             "2019-03-05",
             "2018-02-04",
@@ -46,6 +48,7 @@ class TestAggregateFeature(unittest.TestCase):
         self.cat_df = pd.DataFrame(
             {
                 "IP_PATIENT_ID": self.patient_ids,
+                "Start Date": pd.to_datetime(self.start_dates),
                 self.agg_on: self.categorical_values,
                 self.time_col: pd.to_datetime(self.time_col_values),
             }
@@ -53,13 +56,14 @@ class TestAggregateFeature(unittest.TestCase):
         self.ctn_df = pd.DataFrame(
             {
                 "IP_PATIENT_ID": self.patient_ids,
+                "Start Date": pd.to_datetime(self.start_dates),
                 "Value Names": self.continuous_value_names,
                 self.agg_on: self.continuous_values,
                 self.time_col: pd.to_datetime(self.time_col_values),
             }
         )
 
-    @patch("module_code.data.longitudinal_utils.time_window_mask")
+    @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
     def test_no_time_interval_ctn(self, mock_masked_df):
         """
         Tests aggregation of continuous features without using a time interval.
@@ -105,14 +109,13 @@ class TestAggregateFeature(unittest.TestCase):
 
         df = aggregate_ctn_feature(
             self.ctn_df,
-            self.ctn_df,
             agg_on="Value Names",
             agg_values_col=self.agg_on,
             time_col=self.time_col,
         )
-        self.assertTrue(correct_df.equals(df))
+        self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
-    @patch("module_code.data.longitudinal_utils.time_window_mask")
+    @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
     def test_no_time_interval_cat(self, mock_masked_df):
         """
         Tests aggregation of categorical features without using a time interval.
@@ -131,9 +134,9 @@ class TestAggregateFeature(unittest.TestCase):
         mock_masked_df.return_value = self.cat_df
 
         df = aggregate_cat_feature(self.cat_df, self.agg_on, time_col=self.time_col,)
-        self.assertTrue(correct_df.equals(df))
+        self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
-    @patch("module_code.data.longitudinal_utils.time_window_mask")
+    @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
     def test_time_interval_ctn(self, mock_masked_df):
         """
         Tests aggregation of continuous features using a time interval.
@@ -181,15 +184,14 @@ class TestAggregateFeature(unittest.TestCase):
         time_interval = "1D"
         df = aggregate_ctn_feature(
             self.ctn_df,
-            self.ctn_df,
             agg_on="Value Names",
             agg_values_col=self.agg_on,
             time_col=self.time_col,
             time_interval=time_interval,
         )
-        self.assertTrue(correct_df.equals(df))
+        self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
-    @patch("module_code.data.longitudinal_utils.time_window_mask")
+    @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
     def test_time_interval_cat(self, mock_masked_df):
         """
         Tests categorical aggregation of features using a time interval.
@@ -226,19 +228,14 @@ class TestAggregateFeature(unittest.TestCase):
             time_col=self.time_col,
             time_interval=time_interval,
         )
-        self.assertTrue(correct_df.equals(df))
+        self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
 
 class TestWindowMask(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.start_dates = pd.to_datetime(
-            [  # yyyy-mm-dd
-                "2018-02-04",
-                "2019-03-05",
-                "2020-04-06",
-                "2020-04-06",
-            ]
+            ["2018-02-04", "2019-03-05", "2020-04-06", "2020-04-06"]  # yyyy-mm-dd
         )
         self.ndays_on_crrt = [1, 2, 2, 2]
         self.end_dates = [
@@ -246,10 +243,8 @@ class TestWindowMask(unittest.TestCase):
             for start_date, ndays in zip(self.start_dates, self.ndays_on_crrt)
         ]
         self.outcomes_df = pd.DataFrame(
-            {
-                "End Date": self.end_dates,
-            },
-            index=[list(range(len(self.start_dates))), self.start_dates]
+            {"End Date": self.end_dates},
+            index=[list(range(len(self.start_dates))), self.start_dates],
         )
         self.outcomes_df.index.names = ["IP_PATIENT_ID", "Start Date"]
 
@@ -258,7 +253,7 @@ class TestWindowMask(unittest.TestCase):
         All pts have data on start date.
         """
         # create daily patient delta within the window specified by delta. all pts have data on start date
-        deltas = [(2, 2), (0, 1/24), (1/24, 0), (0, 0)]
+        deltas = [(2, 2), (0, 1 / 24), (1 / 24, 0), (0, 0)]
         agg_dates = []
         pt_ids = []
         start_dates = []
@@ -270,14 +265,16 @@ class TestWindowMask(unittest.TestCase):
             pt_ids.append(pt_id)
             start_dates.append(start_date)
             # add an entry for each day before, consider partial days
-            for b in np.arange(min(1, days_before) if days_before > 0 else 1,
-                               days_before + 1):
+            for b in np.arange(
+                min(1, days_before) if days_before > 0 else 1, days_before + 1
+            ):
                 agg_dates.append(start_date - timedelta(days=float(b)))
                 pt_ids.append(pt_id)
                 start_dates.append(start_date)
             # add an entry for each day after, consider partial days
-            for a in np.arange(min(1, days_after) if days_after > 0 else 1,
-                               days_after + 1):
+            for a in np.arange(
+                min(1, days_after) if days_after > 0 else 1, days_after + 1
+            ):
                 agg_dates.append(start_date + timedelta(days=float(a)))
                 pt_ids.append(pt_id)
                 start_dates.append(start_date)
@@ -309,7 +306,7 @@ class TestWindowMask(unittest.TestCase):
             [1, 8],
             [0, 5, 6, 7, 9],
             [0, 1, 5, 6, 7, 8, 9],
-            [0, 5, 6, 7, 9]
+            [0, 5, 6, 7, 9],
         ]
         self._test_multiple_windows(time_windows, df, start_dates, correct_df_rows)
 
@@ -328,14 +325,13 @@ class TestWindowMask(unittest.TestCase):
         for (pre_start_delta, post_start_delta, mask_end), correct_rows in zip(
             time_windows, correct_df_rows
         ):
-            time_mask = get_time_window_mask(self.outcomes_df,
-                                             pre_start_delta,
-                                             post_start_delta,
-                                             mask_end=mask_end if mask_end else "End Date")
-            masked_df = apply_time_window_mask(
-                df,
-                "TIME_COL",
-                time_mask)
+            time_mask = get_time_window_mask(
+                self.outcomes_df,
+                pre_start_delta,
+                post_start_delta,
+                mask_end=mask_end if mask_end else "End Date",
+            )
+            masked_df = apply_time_window_mask(df, "TIME_COL", time_mask)
             correct_df = df.copy(deep=True)
             correct_df["Start Date"] = start_dates
             correct_df = correct_df.iloc[correct_rows]

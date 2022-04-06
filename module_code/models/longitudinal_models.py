@@ -1,9 +1,7 @@
 from argparse import ArgumentParser, Namespace
-import inspect
 from typing import Callable, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
-from sklearn.base import TransformerMixin, BaseEstimator
 
 # ML modules
 import torch
@@ -15,16 +13,18 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import torchmetrics
 
-
+# commented b/c my system can't install sktime because it's 64 bit
 from sktime.classification.base import BaseClassifier
 from sktime.classification.hybrid import HIVECOTEV1
 from sktime.classification.kernel_based import ROCKETClassifier
 
-from data.pytorch_loaders import CRRTDataModule
+# Local
+from data.torch_loaders import TorchCRRTDataModule
 from data.argparse_utils import YAMLStringListToList
+from models.base_model import BaseSklearnPredictor, AbstractModel
 
 
-class LongitudinalModel(pl.LightningModule):
+class LongitudinalModel(pl.LightningModule, AbstractModel):
     def __init__(
         self,
         seed: int,
@@ -157,7 +157,7 @@ class LongitudinalModel(pl.LightningModule):
     ############################
     #  Initialization Helpers  #
     ############################
-    def build_model(self,) -> Union[Module, BaseClassifier]:
+    def build_model(self) -> Union[Module, BaseClassifier]:
         # https://www.sktime.org/en/stable/api_reference/auto_generated/sktime.classification.hybrid.HIVECOTEV1.html
         # TODO: when calling fit in the wrapper class, just call fit on the model on the data, they should work liike sklearn models so the pytorch datamodule can be used even then
         if self.hparams.modeln == "hivecote":
@@ -216,18 +216,18 @@ class LongitudinalModel(pl.LightningModule):
         return [getattr(torchmetrics, metric)() for metric in metric_names]
 
     @staticmethod
-    def add_model_args(parent_parser: ArgumentParser) -> ArgumentParser:
-        # TODO: Add required when using ctn learning or somethign
-        p = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_args(p: ArgumentParser) -> ArgumentParser:
         p.add_argument(
-            "--modeln",
+            "--dynamic-modeln",
+            dest="modeln",
             type=str,
             default="lstm",
             choices=["lstm", "hivecote", "rocket"],
             help="Name of model to use for continuous learning.",
         )
         p.add_argument(
-            "--metrics",
+            "--dynamic-metrics",
+            dest="metrics",
             type=str,
             action=YAMLStringListToList(str),
             help="(List of comma-separated strings) Name of Pytorch Metrics from torchmetrics.",
@@ -279,15 +279,13 @@ class LongitudinalModel(pl.LightningModule):
         return p
 
 
-class CRRTPredictor(TransformerMixin, BaseEstimator):
-    """
-    Wrapper predictor class, compatible with sklearn.
-    Uses longitudinal model to do time series classification on tabular data.
-    Implements fit and transform.
-    """
-
+class CRRTDynamicPredictor(BaseSklearnPredictor):
     def __init__(
-        self, patience: int = 5, max_epochs: int = 100, num_gpus: int = 1, **kwargs,
+        self,
+        patience: int = 5,
+        max_epochs: int = 100,
+        num_gpus: int = 1,
+        **kwargs,
     ):
         self.seed = kwargs["seed"]
         self.patience = patience
@@ -307,11 +305,17 @@ class CRRTPredictor(TransformerMixin, BaseEstimator):
             weights_summary="full",
         )
 
+    @classmethod
+    def from_argparse_args(
+        cls, args: Union[Namespace, ArgumentParser], **kwargs
+    ) -> "CRRTDynamicPredictor":
+        return super().from_argparse_args(LongitudinalModel, args, **kwargs)
+
     def load_model(self, serialized_model_path: str) -> None:
         """Loads the underlying autoencoder state dict from path."""
         self.longitudinal_model.load_state_dict(load(serialized_model_path))
 
-    def fit(self, data: CRRTDataModule):
+    def fit(self, data: TorchCRRTDataModule):
         """Trains the autoencoder for imputation."""
         pl.seed_everything(self.seed)
         self.data = data
@@ -323,7 +327,10 @@ class CRRTPredictor(TransformerMixin, BaseEstimator):
 
         return self
 
-    def transform(self, X: Union[np.ndarray, pd.DataFrame],) -> np.ndarray:
+    def transform(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+    ) -> np.ndarray:
         """Applies trained model to given data X."""
         if isinstance(X, pd.DataFrame):
             X = torch.tensor(
@@ -336,29 +343,3 @@ class CRRTPredictor(TransformerMixin, BaseEstimator):
         outputs = self.longitudinal_model(X)  # .detach().cpu().numpy()
 
         return outputs
-
-    @classmethod
-    def from_argparse_args(
-        cls, args: Union[Namespace, ArgumentParser], **kwargs
-    ) -> "CRRTPredictor":
-        """
-        Create an instance from CLI arguments.
-        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
-        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.8.3/pytorch_lightning/trainer/trainer.py#L750
-        """
-        if isinstance(args, ArgumentParser):
-            args = cls.parse_argparser(args)
-        params = vars(args)
-
-        # we only want to pass in valid args, the rest may be user specific
-        # returns a immutable dict MappingProxyType, want to combine so copy
-        valid_kwargs = inspect.signature(cls.__init__).parameters.copy()
-        valid_kwargs.update(
-            inspect.signature(LongitudinalModel.__init__).parameters.copy()
-        )
-        data_kwargs = dict(
-            (name, params[name]) for name in valid_kwargs if name in params
-        )
-        data_kwargs.update(**kwargs)
-
-        return cls(**data_kwargs)

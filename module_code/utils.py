@@ -1,50 +1,26 @@
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, SUPPRESS
 from os.path import isfile
 import sys
 import yaml
 from typing import Dict, Optional
 
 from data.argparse_utils import YAMLStringDictToDict
-from data.pytorch_loaders import CRRTDataModule
+from data.torch_loaders import TorchCRRTDataModule
+from data.sklearn_loaders import SklearnCRRTDataModule
 from models.longitudinal_models import LongitudinalModel
+from models.static_models import StaticModel
 
 
-def load_cli_args(args_options_path: str = "options.yml"):
-    """
-    Modify command line args if desired, or load from YAML file.
-    """
-    if len(sys.argv) <= 3:
-        if isfile(args_options_path):  # if file exists
-            with open(args_options_path, "r") as f:
-                res = yaml.safe_load(f)
-
-            # set/override cli args below
-            """
-            res = {
-                "run-name": "placeholder",
-                # "experiment-tracking": True,  # any value works, comment line to toggle off
-            }
-            """
-
-            sys.argv = [sys.argv[0]]
-            for k, v in res.items():
-                sys.argv += [f"--{k}", str(v)]
-
-
-def init_cli_args() -> Namespace:
-    """
-    Parse commandline args needed to run experiments.
-    Basically mostly hyperparams.
-    """
-
-    p = ArgumentParser()
+def add_global_args(
+    p: ArgumentParser, suppress_default: bool = False
+) -> ArgumentParser:
     p.add_argument(
-        "--seed", type=int, default=42, help="Seed used for reproducing results.",
+        "--seed", type=int, default=41, help="Seed used for reproducing results.",
     )
     p.add_argument(
         "--experiment",
         type=str,
-        choices=["run_cv", "ctn_learning"],
+        choices=["run_cv", "ctn_learning", "static_learning"],
         help="Name of method to run in experiments directory. Name must match exactly. Used to set experiment name in mlflow",
     )
     p.add_argument(
@@ -67,27 +43,28 @@ def init_cli_args() -> Namespace:
     )
 
     # Params for generating preprocessed df file
-    p.add_argument(
+    time_p = p.add_argument_group("Time Interval and Windowing")
+    time_p.add_argument(
         "--time-interval",
         type=str,
         default=None,
         help="Time interval in which to aggregate the raw data for preprocessing (formatted for pandas.resample()).",
     )
-    p.add_argument(
+    time_p.add_argument(
         "--pre-start-delta",
-        type=str,  # will be dict, to str (l30), convert to dict again
+        type=str,  # will be dict, to str (l29), convert to dict again
         action=YAMLStringDictToDict(),
         default=None,
         help="Dictionary of 'YEARS', 'MONTHS', and 'DAYS' (time) to specify offset of days before the start date to set the start point of the time window.",
     )
-    p.add_argument(
+    time_p.add_argument(
         "--post-start-delta",
-        type=str,  # will be dict, to str (l30), convert to dict again
+        type=str,  # will be dict, to str (l29), convert to dict again
         action=YAMLStringDictToDict(),
         default=None,
         help="Dictionary of 'YEARS', 'MONTHS', and 'DAYS' (time) to specify offset of days after the start date to set the end point of the time window.",
     )
-    p.add_argument(
+    time_p.add_argument(
         "--time-window-end",
         type=str,
         default="Start Date",
@@ -96,25 +73,92 @@ def init_cli_args() -> Namespace:
     )
 
     # Logging / Tracking
-    p.add_argument(
+    logging_p = p.add_argument_group("Logging / Tracking")
+    logging_p.add_argument(
         "--experiment-tracking", type=bool, help="Toggles experiment tracking on."
     )  # Note: presence regardless of value will toggle on, e.g. "var: False"
-    p.add_argument(
+    logging_p.add_argument(
         "--local-log-path",
         type=str,
         help="Location on local machine to store logs (including mlflow experiments).",
     )
-    p.add_argument(
+    logging_p.add_argument(
         "--run-name",
         type=str,
         default=None,
         help="Name of run under a tracked experiment (logged to mlflow).",
     )
+    logging_p.add_argument(
+        "--runtest",
+        type=bool,
+        default=False,
+        help="Whether or not to run testing on the predictive model.",
+    )
 
+    # To be able to add these to the subparsers without conflicts
+    # Ref: https://stackoverflow.com/a/62906328/1888794
+    if suppress_default:
+        for action in p._actions:
+            action.default = SUPPRESS
+
+    return p
+
+
+def load_cli_args(args_options_path: str = "options.yml"):
+    """
+    Modify command line args if desired, or load from YAML file.
+    """
+    if len(sys.argv) <= 3:
+        if isfile(args_options_path):  # if file exists
+            with open(args_options_path, "r") as f:
+                res = yaml.safe_load(f)
+
+            # set/override cli args below
+            """
+            res = {
+                "run-name": "placeholder",
+                # "experiment-tracking": True,  # any value works, comment line to toggle off
+            }
+            """
+
+            sys.argv = [sys.argv[0]]
+
+            # add as a positional arg/command to control subparsers (instead of flag)
+            # don't remove so that experiment tracking automatically logs
+            if "model-type" in res:
+                sys.argv.append(res["model-type"])
+
+            for k, v in res.items():
+                sys.argv += [f"--{k}", str(v)]
+
+
+def init_cli_args() -> Namespace:
+    """
+    Parse commandline args needed to run experiments.
+    Basically mostly hyperparams.
+    """
+    p = ArgumentParser()
+    p = add_global_args(p)
+
+    # Allows subcommands, so args are only added based on the command
+    # Ref: https://docs.python.org/3/library/argparse.html#sub-commands
+    subparsers = p.add_subparsers(dest="model_type", help="Model types.")
+    dynamic_parser = subparsers.add_parser("dynamic", help="Dynamic Model")
+    # add global args instead of parenting bc defaults and actions are shared by ref
+    # there will be conflicts with the subparsers and overwriting help and defaults.
+    # Ref: https://stackoverflow.com/a/62906328/1888794
+    dynamic_parser = add_global_args(dynamic_parser, suppress_default=True)
     # add args for pytorch lightning datamodule
-    p = CRRTDataModule.add_data_args(p)
+    dynamic_parser = TorchCRRTDataModule.add_data_args(dynamic_parser)
     # add args for pytorch lightning model
-    p = LongitudinalModel.add_model_args(p)
+    dynamic_parser = LongitudinalModel.add_model_args(dynamic_parser)
+
+    static_parser = subparsers.add_parser("static", help="Static Model")
+    static_parser = add_global_args(static_parser, suppress_default=True)
+    # add args for pytorch lightning datamodule
+    static_parser = SklearnCRRTDataModule.add_data_args(static_parser)
+    # add args for pytorch lightning model
+    static_parser = StaticModel.add_model_args(static_parser)
 
     # return p.parse_args()
     # Ignore unrecognized args

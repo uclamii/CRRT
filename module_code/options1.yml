@@ -1,0 +1,22 @@
+experiment: "ctn_learning"
+raw-data-dir: "C:\\Users\\arvin\\Documents\\ucla research\\CRRT project\\data_files"
+preprocessed-df-file: "df_daily_7d_enddate.parquet"  # "combined_df.feather"
+num-gpus: 0
+
+# Preprocessing params
+time-interval: None
+pre_start_delta:
+    YEARS: 0
+    MONTHS: 0
+    DAYS: 7
+
+# model params
+hidden-layers: 1
+
+# metrics
+metrics: Accuracy
+loss-name: MSE
+
+# - experiment-tracking: True,  # any value works, comment line to toggle off
+run-name: "placeholder"
+local-log-path: "C:\\Users\\arvin\\dev\\crrt\\CRRT\\exp"

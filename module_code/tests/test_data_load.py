@@ -22,7 +22,7 @@ class TestDataLoad(unittest.TestCase):
     @patch("module_code.data.longitudinal_features.load_labs")
     @patch("module_code.data.longitudinal_features.load_vitals")
     @patch("module_code.data.longitudinal_features.load_diagnoses")
-    @patch("module_code.data.longitudinal_features.load_outcomes")
+    @patch("module_code.data.load.load_outcomes")
     def test_merge_features_with_outcome(
         self,
         mock_outcomes,
