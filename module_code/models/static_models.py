@@ -123,6 +123,8 @@ class StaticModel(AbstractModel):
 
     def configure_metrics(self, metric_names: List[str]) -> List[Callable]:
         """Pick metrics."""
+        if metric_names is None:
+            return None
         for metric in metric_names:
             # TODO: move these assertions to argparse
             assert metric in metric_map, (
@@ -133,6 +135,8 @@ class StaticModel(AbstractModel):
 
     def configure_curves(self, curve_names: List[str]) -> List[Callable]:
         """Pick plots."""
+        if curve_names is None:
+            return None
         for curve in curve_names:
             assert (
                 curve in curve_map
@@ -153,16 +157,14 @@ class StaticModel(AbstractModel):
             "--static-metrics",
             dest="metrics",
             type=str,
-            action=YAMLStringListToList(str),
-            choices=list(metric_map.keys()),
+            action=YAMLStringListToList(str, choices=list(metric_map.keys())),
             help="(List of comma-separated strings) Name of metrics from sklearn.",
         )
         p.add_argument(
             "--static-curves",
             dest="curves",
             type=str,
-            action=YAMLStringListToList(str),
-            choices=list(curve_map.keys()),
+            action=YAMLStringListToList(str, choices=list(curve_map.keys())),
             help="(List of comma-separated strings) Name of curves/plots from sklearn.",
         )
         return p
@@ -219,9 +221,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         """
         X, y = getattr(self.data, stage)
         ## Evaluate on whole dataset ##
-        self.eval_and_log(
-            self.static_model.model, X, y, prefix=f"{self.static_model.modeln}_{stage}_"
-        )
+        self.eval_and_log(X, y, prefix=f"{self.static_model.modeln}_{stage}_")
 
         X = pd.DataFrame(X, columns=self.data.columns)
         ## Evaluate for each filter ##
@@ -230,9 +230,8 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 if isinstance(filter, Callable):
                     filter = filter(X)
 
+                # If we don't ask for values sklearn will complain it was fitted without feature names
                 self.eval_and_log(
-                    self.static_model.model,
-                    # If we don't ask for values sklearn will complain it was fitted without feature names
                     X.values[filter],
                     y.values[filter],
                     prefix=f"{self.static_model.modeln}_{stage}_{filter_n}_",
@@ -241,22 +240,26 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     def eval_and_log(self, data, labels, prefix, decision_threshold: float = 0.5):
         """Logs metrics and curves/plots."""
         # Metrics
-        mlflow.log_metrics(
-            {
-                f"{prefix}_{metric_name}": metric_fn(
-                    labels, self.predict_proba(data), decision_threshold
-                )
-                for metric_name, metric_fn in zip(
-                    self.static_model.metric_names, self.static_model.metrics
-                )
-            }
-        )
+        if self.static_model.metric_names is not None:
+            mlflow.log_metrics(
+                {
+                    f"{prefix}_{metric_name}": metric_fn(
+                        labels, self.predict_proba(data)[:, 1], decision_threshold
+                    )
+                    for metric_name, metric_fn in zip(
+                        self.static_model.metric_names, self.static_model.metrics
+                    )
+                }
+            )
 
         # Curves/Plots
-        for curve_name, curve in zip(
-            self.static_model.curve_names, self.static_model.curves
-        ):
-            mlflow.log_figure(
-                curve.from_predictions(labels, self.predict_proba(data)).plot().figure_,
-                f"{prefix}_{curve_name}.png",
-            )
+        if self.static_model.curve_names is not None:
+            for curve_name, curve in zip(
+                self.static_model.curve_names, self.static_model.curves
+            ):
+                mlflow.log_figure(
+                    curve.from_predictions(labels, self.predict_proba(data)[:, 1])
+                    .plot()
+                    .figure_,
+                    f"{prefix}_{curve_name}.png",
+                )
