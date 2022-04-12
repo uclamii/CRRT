@@ -67,8 +67,7 @@ if __name__ == "__main__":
         mlflow.set_tracking_uri(f"file://{join(args.local_log_path, 'mlruns')}")
         mlflow.set_experiment(experiment_name=args.experiment)
         # Autologging
-        mlflow.pytorch.autolog()
-        mlflow.sklearn.autolog()
+        mlflow.autolog()
 
         with mlflow.start_run(run_name=args.run_name):
             # Log all cli args as tags

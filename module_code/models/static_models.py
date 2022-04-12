@@ -11,6 +11,10 @@ from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    DetCurveDisplay,
+    PrecisionRecallDisplay,
+    RocCurveDisplay,
     roc_auc_score,
     brier_score_loss,
     accuracy_score,
@@ -20,6 +24,8 @@ from sklearn.metrics import (
     precision_score,
     confusion_matrix,
 )
+from sklearn.calibration import CalibrationDisplay
+
 import mlflow
 
 ## Local
@@ -79,15 +85,34 @@ metric_map = {
     )[0, 1],
 }
 
+# https://scikit-learn.org/stable/modules/classes.html#id3
+curve_map = {
+    "calibration_curve": CalibrationDisplay,
+    "roc_curve": RocCurveDisplay,
+    "pr_curve": PrecisionRecallDisplay,
+    "det_curve": DetCurveDisplay,
+    "confusion_matrix": ConfusionMatrixDisplay,
+}
+
 
 class StaticModel(AbstractModel):
-    def __init__(self, seed: int, modeln: str, metrics: List[str], **model_kwargs):
+    def __init__(
+        self,
+        seed: int,
+        modeln: str,
+        metrics: List[str],
+        curves: List[str],
+        **model_kwargs,
+    ):
         super().__init__()
         self.seed = seed
         self.modeln = modeln
         self.model_kwargs = model_kwargs
         self.model = self.build_model()
         self.metrics = self.configure_metrics(metrics)
+        self.metric_names = metrics
+        self.curves = self.configure_curves(curves)
+        self.curve_names = curves
 
     def build_model(self):
         if self.modeln in alg_map:
@@ -98,12 +123,25 @@ class StaticModel(AbstractModel):
 
     def configure_metrics(self, metric_names: List[str]) -> List[Callable]:
         """Pick metrics."""
+        if metric_names is None:
+            return None
         for metric in metric_names:
+            # TODO: move these assertions to argparse
             assert metric in metric_map, (
                 f"{metric} is not valid metric name."
                 " Must match a key in `metric_map`"
             )
         return [metric_map[metric] for metric in metric_names]
+
+    def configure_curves(self, curve_names: List[str]) -> List[Callable]:
+        """Pick plots."""
+        if curve_names is None:
+            return None
+        for curve in curve_names:
+            assert (
+                curve in curve_map
+            ), f"{curve} is not valid plot name. Must match a key in `plot_map`"
+        return [curve_map[curve] for curve in curve_names]
 
     @staticmethod
     def add_model_args(p: ArgumentParser) -> ArgumentParser:
@@ -119,8 +157,15 @@ class StaticModel(AbstractModel):
             "--static-metrics",
             dest="metrics",
             type=str,
-            action=YAMLStringListToList(str),
-            help="(List of comma-separated strings) Name of Pytorch Metrics from torchmetrics.",
+            action=YAMLStringListToList(str, choices=list(metric_map.keys())),
+            help="(List of comma-separated strings) Name of metrics from sklearn.",
+        )
+        p.add_argument(
+            "--static-curves",
+            dest="curves",
+            type=str,
+            action=YAMLStringListToList(str, choices=list(curve_map.keys())),
+            help="(List of comma-separated strings) Name of curves/plots from sklearn.",
         )
         return p
 
@@ -176,9 +221,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         """
         X, y = getattr(self.data, stage)
         ## Evaluate on whole dataset ##
-        mlflow.sklearn.eval_and_log_metrics(
-            self.static_model.model, X, y, prefix=f"{self.static_model.modeln}_{stage}_"
-        )
+        self.eval_and_log(X, y, prefix=f"{self.static_model.modeln}_{stage}_")
 
         X = pd.DataFrame(X, columns=self.data.columns)
         ## Evaluate for each filter ##
@@ -187,10 +230,36 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 if isinstance(filter, Callable):
                     filter = filter(X)
 
-                mlflow.sklearn.eval_and_log_metrics(
-                    self.static_model.model,
-                    # If we don't ask for values sklearn will complain it was fitted without feature names
+                # If we don't ask for values sklearn will complain it was fitted without feature names
+                self.eval_and_log(
                     X.values[filter],
                     y.values[filter],
                     prefix=f"{self.static_model.modeln}_{stage}_{filter_n}_",
+                )
+
+    def eval_and_log(self, data, labels, prefix, decision_threshold: float = 0.5):
+        """Logs metrics and curves/plots."""
+        # Metrics
+        if self.static_model.metric_names is not None:
+            mlflow.log_metrics(
+                {
+                    f"{prefix}_{metric_name}": metric_fn(
+                        labels, self.predict_proba(data)[:, 1], decision_threshold
+                    )
+                    for metric_name, metric_fn in zip(
+                        self.static_model.metric_names, self.static_model.metrics
+                    )
+                }
+            )
+
+        # Curves/Plots
+        if self.static_model.curve_names is not None:
+            for curve_name, curve in zip(
+                self.static_model.curve_names, self.static_model.curves
+            ):
+                mlflow.log_figure(
+                    curve.from_predictions(labels, self.predict_proba(data)[:, 1])
+                    .plot()
+                    .figure_,
+                    f"{prefix}_{curve_name}.png",
                 )
