@@ -1,6 +1,6 @@
 import pandas as pd
 
-from data.load import get_pt_type_indicators
+from data.utils import get_pt_type_indicators
 
 
 def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:

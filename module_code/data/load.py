@@ -1,6 +1,10 @@
+from argparse import Namespace
 from functools import reduce
+import logging
 from os.path import join
 from pathlib import Path
+import sys
+import time
 import pandas as pd
 from typing import Dict, List, Optional
 
@@ -18,6 +22,8 @@ from data.utils import (
     onehot,
     read_files_and_combine,
 )
+from data.preprocess import preprocess_data
+from utils import get_preprocessed_file_name
 
 
 def get_num_prev_crrt_treatments(df: pd.DataFrame):
@@ -38,50 +44,6 @@ def get_num_prev_crrt_treatments(df: pd.DataFrame):
         "Start Date", append=True
     )  # add start date as second index
     return num_prev_crrt_treatments
-
-
-def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Look in diagnoses and problems for ccs codes related to heart, liver, and infection."""
-    tables = ["dx", "pr"]
-    types = [
-        {"name": "liver", "codes": [6, 16, 149, 150, 151, 214, 222]},
-        # TODO: should these be mutually exclusive
-        # could potentially add "shock"/249 to heart too
-        {
-            "name": "heart",
-            "codes": [
-                100,
-                101,
-                102,
-                103,
-                104,
-                105,
-                106,
-                107,
-                108,
-                109,
-                114,
-                115,
-                116,
-                117,
-            ],
-        },
-        {"name": "infection", "codes": [2, 3, 4, 7, 249]},
-    ]
-
-    for pt_type in types:
-        masks = []
-        for code in pt_type["codes"]:
-            for table_name in tables:
-                column_name = f"{table_name}_CCS_CODE_{code}"
-                # codes may not be in the dataset
-                if column_name in df:
-                    masks.append((df[column_name] > 0).astype(int))
-
-        df[f"{pt_type['name']}_pt_indicator"] = reduce(
-            lambda maska, maskb: maska | maskb, masks
-        )
-    return df
 
 
 def load_outcomes(
@@ -265,3 +227,45 @@ def merge_features_with_outcome(
     # df = features_with_outcomes.groupby(merge_on).last()
 
     return features_with_outcomes
+
+
+def load_data(args: Namespace) -> pd.DataFrame:
+    preprocessed_df_fname = get_preprocessed_file_name(
+        args.pre_start_delta,
+        args.post_start_delta,
+        args.time_interval,
+        args.time_window_end,
+        args.preprocessed_df_file,
+        args.serialization,
+    )
+    preprocessed_df_path = join(args.raw_data_dir, preprocessed_df_fname)
+
+    try:
+        deserialize_fn = getattr(pd, f"read_{args.serialization}")
+        # raise IOError
+        df = deserialize_fn(preprocessed_df_path)
+    except IOError:
+        # Keep a log of how preprocessing went. can call logger anywhere inside of logic from here
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            # print to stdout and log to file
+            handlers=[
+                logging.FileHandler("dialysis_preproc.log"),
+                logging.StreamHandler(sys.stdout),
+            ],
+        )
+        logging.info("Preprocessed file does not exist! Creating...")
+        start_time = time.time()
+        df = merge_features_with_outcome(
+            args.raw_data_dir,
+            args.time_interval,
+            args.pre_start_delta,
+            args.post_start_delta,
+            args.time_window_end,
+        )  # 140s ~2.5 mins, 376.5s ~6mins for daily aggregation
+        logging.info(f"Loading took {time.time() - start_time} seconds.")
+        serialize_fn = getattr(df, f"to_{args.serialization}")
+        serialize_fn(preprocessed_df_path)
+
+    return preprocess_data(df)

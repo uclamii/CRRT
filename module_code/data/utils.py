@@ -112,3 +112,47 @@ class SelectThreshold(_BaseFilter):
             kept_ties = ties[: max_feats - mask.sum()]
             mask[kept_ties] = True
         return mask
+
+
+def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Look in diagnoses and problems for ccs codes related to heart, liver, and infection."""
+    tables = ["dx", "pr"]
+    types = [
+        {"name": "liver", "codes": [6, 16, 149, 150, 151, 214, 222]},
+        # TODO: should these be mutually exclusive
+        # could potentially add "shock"/249 to heart too
+        {
+            "name": "heart",
+            "codes": [
+                100,
+                101,
+                102,
+                103,
+                104,
+                105,
+                106,
+                107,
+                108,
+                109,
+                114,
+                115,
+                116,
+                117,
+            ],
+        },
+        {"name": "infection", "codes": [2, 3, 4, 7, 249]},
+    ]
+
+    for pt_type in types:
+        masks = []
+        for code in pt_type["codes"]:
+            for table_name in tables:
+                column_name = f"{table_name}_CCS_CODE_{code}"
+                # codes may not be in the dataset
+                if column_name in df:
+                    masks.append((df[column_name] > 0).astype(int))
+
+        df[f"{pt_type['name']}_pt_indicator"] = reduce(
+            lambda maska, maskb: maska | maskb, masks
+        )
+    return df

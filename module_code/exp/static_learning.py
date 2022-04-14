@@ -3,7 +3,7 @@ import pandas as pd
 
 from data.sklearn_loaders import SklearnCRRTDataModule
 from models.static_models import CRRTStaticPredictor
-from data.load import get_pt_type_indicators
+from data.utils import get_pt_type_indicators
 
 
 def static_learning(df: pd.DataFrame, args: Namespace):
