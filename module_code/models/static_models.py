@@ -1,7 +1,10 @@
 from argparse import ArgumentParser, Namespace
+import PIL
 from typing import Callable, Dict, List, Optional, Union
+from os.path import join
 import numpy as np
 import pandas as pd
+from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
@@ -10,6 +13,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
+
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     DetCurveDisplay,
@@ -25,7 +29,8 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 from sklearn.calibration import CalibrationDisplay
-
+from matplotlib import pyplot as plt
+from mealy import ErrorAnalyzer, ErrorVisualizer
 import mlflow
 
 ## Local
@@ -220,7 +225,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         The filters can be either the bool series filter itself, or a function that produces one given the df.
         """
         X, y = getattr(self.data, stage)
-        ## Evaluate on whole dataset ##
+        ## Evaluate on split of dataset (train, val, test) ##
         self.eval_and_log(X, y, prefix=f"{self.static_model.modeln}_{stage}_")
 
         X = pd.DataFrame(X, columns=self.data.columns)
@@ -263,3 +268,67 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                     .figure_,
                     f"{prefix}_{curve_name}.png",
                 )
+
+        # Error analysis
+        try:
+            error_analyzer = ErrorAnalyzer(
+                self.static_model.model,
+                feature_names=self.data.columns,
+                random_state=self.seed,
+            )
+            error_analyzer.fit(data, labels)
+            error_analyzer.evaluate(data, labels, output_format="dict")
+            error_analyzer.get_error_leaf_summary(
+                leaf_selector=None, add_path_to_leaves=True
+            )
+
+            error_viz = ErrorVisualizer(error_analyzer)
+            # graphviz source to png so it can be logged
+            tree_src = error_viz.plot_error_tree()
+            tree_src.format = "png"
+            tree_src.render(join("img_artifacts", f"{prefix}_tree"))
+            mlflow.log_artifact(join("img_artifacts", f"{prefix}_tree.png"))
+
+            leaf_id = error_analyzer._get_ranked_leaf_ids()[0]
+            error_viz.plot_feature_distributions_on_leaves(
+                leaf_selector=leaf_id, top_k_features=5
+            )
+            mlflow.log_figure(plt.gcf(), f"{prefix}_leave_dists.png")
+        except RuntimeError:
+            # all predictions are correct no error analysis, skip
+            pass
+
+        # Feature importance
+        # Ref: https://machinelearningmastery.com/calculate-feature-importance-with-python/
+        if isinstance(self.static_model.model, LogisticRegression) or isinstance(
+            self.static_model.model, SVC
+        ):
+            importance = self.static_model.model.coef_[0]
+        elif (
+            isinstance(self.static_model.model, DecisionTreeClassifier)
+            or isinstance(self.static_model.model, RandomForestClassifier)
+            or isinstance(self.static_model.model, XGBClassifier)
+            or isinstance(self.static_model.model, LGBMClassifier)
+        ):
+            importance = self.static_model.model.feature_importances_
+        elif isinstance(self.static_model.model, KNeighborsClassifier) or isinstance(
+            self.static_model.model, MultinomialNB
+        ):
+            importance = permutation_importance(
+                self.static_model.model, data, labels, random_state=self.seed
+            ).importances_mean
+        plt.figure()
+        plt.bar([x for x in range(len(importance))], importance)
+        mlflow.log_figure(plt.gcf(), f"{prefix}_feature_importance.png")
+        plt.close()
+
+    @staticmethod
+    def log_fig_from_plt(name: str):
+        """Grabs figure from plot converts to PIL image and logs it via mlflow.
+        Avoiding having to save image separately to disk."""
+        # Ref: https://stackoverflow.com/a/61756899/1888794
+        # canvas = plt.gcf().canvas
+        # img = PIL.Image.frombytes(
+        #     "RGB", canvas.get_width_height(), canvas.tostring_rgb()
+        # )
+        # mlflow.log_image(img, name)

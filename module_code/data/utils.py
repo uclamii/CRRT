@@ -118,12 +118,14 @@ def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Look in diagnoses and problems for ccs codes related to heart, liver, and infection."""
     tables = ["dx", "pr"]
     types = [
-        {"name": "liver", "codes": [6, 16, 149, 150, 151, 214, 222]},
+        {"name": "liver", "codes": [6, 16, 149, 150, 151, 222]},
         # TODO: should these be mutually exclusive
         # could potentially add "shock"/249 to heart too
         {
             "name": "heart",
             "codes": [
+                96,
+                97,
                 100,
                 101,
                 102,
@@ -140,7 +142,7 @@ def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
                 117,
             ],
         },
-        {"name": "infection", "codes": [2, 3, 4, 7, 249]},
+        {"name": "infection", "codes": [1, 2, 3, 4, 5, 7, 8, 249]},
     ]
 
     for pt_type in types:

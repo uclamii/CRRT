@@ -229,7 +229,35 @@ def merge_features_with_outcome(
     return features_with_outcomes
 
 
-def load_data(args: Namespace) -> pd.DataFrame:
+def process_and_serialize_raw_data(
+    args: Namespace, preprocessed_df_path: str
+) -> pd.DataFrame:
+    # Keep a log of how preprocessing went. can call logger anywhere inside of logic from here
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        # print to stdout and log to file
+        handlers=[
+            logging.FileHandler("dialysis_preproc.log"),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+    logging.info("Preprocessed file does not exist! Creating...")
+    start_time = time.time()
+    df = merge_features_with_outcome(
+        args.raw_data_dir,
+        args.time_interval,
+        args.pre_start_delta,
+        args.post_start_delta,
+        args.time_window_end,
+    )  # 140s ~2.5 mins, 376.5s ~6mins for daily aggregation
+    logging.info(f"Loading took {time.time() - start_time} seconds.")
+    serialize_fn = getattr(df, f"to_{args.serialization}")
+    serialize_fn(preprocessed_df_path)
+    return df
+
+
+def get_preprocessed_df_path(args: Namespace) -> str:
     preprocessed_df_fname = get_preprocessed_file_name(
         args.pre_start_delta,
         args.post_start_delta,
@@ -239,33 +267,16 @@ def load_data(args: Namespace) -> pd.DataFrame:
         args.serialization,
     )
     preprocessed_df_path = join(args.raw_data_dir, preprocessed_df_fname)
+    return preprocessed_df_path
 
+
+def load_data(args: Namespace) -> pd.DataFrame:
+    preprocessed_df_path = get_preprocessed_df_path(args)
     try:
         deserialize_fn = getattr(pd, f"read_{args.serialization}")
         # raise IOError
         df = deserialize_fn(preprocessed_df_path)
     except IOError:
-        # Keep a log of how preprocessing went. can call logger anywhere inside of logic from here
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format="%(asctime)s [%(levelname)s] %(message)s",
-            # print to stdout and log to file
-            handlers=[
-                logging.FileHandler("dialysis_preproc.log"),
-                logging.StreamHandler(sys.stdout),
-            ],
-        )
-        logging.info("Preprocessed file does not exist! Creating...")
-        start_time = time.time()
-        df = merge_features_with_outcome(
-            args.raw_data_dir,
-            args.time_interval,
-            args.pre_start_delta,
-            args.post_start_delta,
-            args.time_window_end,
-        )  # 140s ~2.5 mins, 376.5s ~6mins for daily aggregation
-        logging.info(f"Loading took {time.time() - start_time} seconds.")
-        serialize_fn = getattr(df, f"to_{args.serialization}")
-        serialize_fn(preprocessed_df_path)
+        df = process_and_serialize_raw_data(args, preprocessed_df_path)
 
     return preprocess_data(df)

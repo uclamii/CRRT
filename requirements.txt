@@ -11,3 +11,4 @@ lightgbm==3.2.1
 xgboost==1.4.2
 mlflow==1.19.0
 pyyaml==5.4.1
+mealy==0.2.5
