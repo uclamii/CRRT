@@ -15,7 +15,10 @@ def add_global_args(
     p: ArgumentParser, suppress_default: bool = False
 ) -> ArgumentParser:
     p.add_argument(
-        "--seed", type=int, default=41, help="Seed used for reproducing results.",
+        "--seed",
+        type=int,
+        default=41,
+        help="Seed used for reproducing results.",
     )
     p.add_argument(
         "--experiment",
@@ -93,6 +96,12 @@ def add_global_args(
         type=bool,
         default=False,
         help="Whether or not to run testing on the predictive model.",
+    )
+    p.add_argument(
+        "--top-k-feature-importance",
+        type=int,
+        default=0,
+        help="Number of features to limit feature importances to.",
     )
 
     # To be able to add these to the subparsers without conflicts

@@ -1,5 +1,4 @@
 from argparse import ArgumentParser, Namespace
-import PIL
 from typing import Callable, Dict, List, Optional, Union
 from os.path import join
 import numpy as np
@@ -30,7 +29,6 @@ from sklearn.metrics import (
 )
 from sklearn.calibration import CalibrationDisplay
 from matplotlib import pyplot as plt
-from mealy import ErrorAnalyzer, ErrorVisualizer
 import mlflow
 
 ## Local
@@ -39,6 +37,9 @@ from data.argparse_utils import YAMLStringListToList
 
 from exp.utils import seed_everything
 from models.base_model import BaseSklearnPredictor, AbstractModel
+from evaluate.error_viz import error_visualization
+from evaluate.error_analysis import model_randomness
+from evaluate.feature_importance import log_feature_importances
 
 alg_map = {
     "lgr": LogisticRegression,
@@ -107,6 +108,7 @@ class StaticModel(AbstractModel):
         modeln: str,
         metrics: List[str],
         curves: List[str],
+        top_k_feature_importance: int,
         **model_kwargs,
     ):
         super().__init__()
@@ -118,6 +120,7 @@ class StaticModel(AbstractModel):
         self.metric_names = metrics
         self.curves = self.configure_curves(curves)
         self.curve_names = curves
+        self.top_k_feature_importance = top_k_feature_importance
 
     def build_model(self):
         if self.modeln in alg_map:
@@ -242,7 +245,13 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                     prefix=f"{self.static_model.modeln}_{stage}_{filter_n}_",
                 )
 
-    def eval_and_log(self, data, labels, prefix, decision_threshold: float = 0.5):
+    def eval_and_log(
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        prefix: str,
+        decision_threshold: float = 0.5,
+    ):
         """Logs metrics and curves/plots."""
         # Metrics
         if self.static_model.metric_names is not None:
@@ -270,57 +279,23 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 )
 
         # Error analysis
-        try:
-            error_analyzer = ErrorAnalyzer(
-                self.static_model.model,
-                feature_names=self.data.columns,
-                random_state=self.seed,
-            )
-            error_analyzer.fit(data, labels)
-            error_analyzer.evaluate(data, labels, output_format="dict")
-            error_analyzer.get_error_leaf_summary(
-                leaf_selector=None, add_path_to_leaves=True
-            )
-
-            error_viz = ErrorVisualizer(error_analyzer)
-            # graphviz source to png so it can be logged
-            tree_src = error_viz.plot_error_tree()
-            tree_src.format = "png"
-            tree_src.render(join("img_artifacts", f"{prefix}_tree"))
-            mlflow.log_artifact(join("img_artifacts", f"{prefix}_tree.png"))
-
-            leaf_id = error_analyzer._get_ranked_leaf_ids()[0]
-            error_viz.plot_feature_distributions_on_leaves(
-                leaf_selector=leaf_id, top_k_features=5
-            )
-            mlflow.log_figure(plt.gcf(), f"{prefix}_leave_dists.png")
-        except RuntimeError:
-            # all predictions are correct no error analysis, skip
-            pass
+        error_visualization(
+            data, labels, prefix, self.static_model.model, self.data.columns, self.seed
+        )
+        model_randomness(data, labels, prefix, self.static_model.model, self.data.columns, self.seed)
 
         # Feature importance
         # Ref: https://machinelearningmastery.com/calculate-feature-importance-with-python/
-        if isinstance(self.static_model.model, LogisticRegression) or isinstance(
-            self.static_model.model, SVC
-        ):
-            importance = self.static_model.model.coef_[0]
-        elif (
-            isinstance(self.static_model.model, DecisionTreeClassifier)
-            or isinstance(self.static_model.model, RandomForestClassifier)
-            or isinstance(self.static_model.model, XGBClassifier)
-            or isinstance(self.static_model.model, LGBMClassifier)
-        ):
-            importance = self.static_model.model.feature_importances_
-        elif isinstance(self.static_model.model, KNeighborsClassifier) or isinstance(
-            self.static_model.model, MultinomialNB
-        ):
-            importance = permutation_importance(
-                self.static_model.model, data, labels, random_state=self.seed
-            ).importances_mean
-        plt.figure()
-        plt.bar([x for x in range(len(importance))], importance)
-        mlflow.log_figure(plt.gcf(), f"{prefix}_feature_importance.png")
-        plt.close()
+        if self.static_model.top_k_feature_importance:
+            log_feature_importances(
+                self.static_model.top_k_feature_importance,
+                data,
+                labels,
+                prefix,
+                self.static_model.model,
+                self.data.columns,
+                self.seed,
+            )
 
     @staticmethod
     def log_fig_from_plt(name: str):
@@ -332,3 +307,4 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         #     "RGB", canvas.get_width_height(), canvas.tostring_rgb()
         # )
         # mlflow.log_image(img, name)
+        pass
