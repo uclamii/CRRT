@@ -115,6 +115,7 @@ class StaticModel(AbstractModel):
         self.seed = seed
         self.modeln = modeln
         self.model_kwargs = model_kwargs
+        self.model_kwargs["random_state"] = seed
         self.model = self.build_model()
         self.metrics = self.configure_metrics(metrics)
         self.metric_names = metrics
@@ -133,12 +134,6 @@ class StaticModel(AbstractModel):
         """Pick metrics."""
         if metric_names is None:
             return None
-        for metric in metric_names:
-            # TODO: move these assertions to argparse
-            assert metric in metric_map, (
-                f"{metric} is not valid metric name."
-                " Must match a key in `metric_map`"
-            )
         return [metric_map[metric] for metric in metric_names]
 
     def configure_curves(self, curve_names: List[str]) -> List[Callable]:
@@ -282,7 +277,9 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         error_visualization(
             data, labels, prefix, self.static_model.model, self.data.columns, self.seed
         )
-        model_randomness(data, labels, prefix, self.static_model.model, self.data.columns, self.seed)
+        # model_randomness(
+        #     data, labels, prefix, self.static_model.model, self.data.columns, self.seed
+        # )
 
         # Feature importance
         # Ref: https://machinelearningmastery.com/calculate-feature-importance-with-python/
@@ -296,15 +293,3 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.data.columns,
                 self.seed,
             )
-
-    @staticmethod
-    def log_fig_from_plt(name: str):
-        """Grabs figure from plot converts to PIL image and logs it via mlflow.
-        Avoiding having to save image separately to disk."""
-        # Ref: https://stackoverflow.com/a/61756899/1888794
-        # canvas = plt.gcf().canvas
-        # img = PIL.Image.frombytes(
-        #     "RGB", canvas.get_width_height(), canvas.tostring_rgb()
-        # )
-        # mlflow.log_image(img, name)
-        pass
