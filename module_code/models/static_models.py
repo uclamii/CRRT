@@ -1,9 +1,7 @@
 from argparse import ArgumentParser, Namespace
 from typing import Callable, Dict, List, Optional, Union
-from os.path import join
 import numpy as np
 import pandas as pd
-from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
@@ -28,7 +26,6 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 from sklearn.calibration import CalibrationDisplay
-from matplotlib import pyplot as plt
 import mlflow
 
 ## Local
@@ -100,6 +97,8 @@ curve_map = {
     "confusion_matrix": ConfusionMatrixDisplay,
 }
 
+error_analysis_map = {"visualize": error_visualization, "randomness": model_randomness}
+
 
 class StaticModel(AbstractModel):
     def __init__(
@@ -108,6 +107,7 @@ class StaticModel(AbstractModel):
         modeln: str,
         metrics: List[str],
         curves: List[str],
+        error_analysis: List[str],
         top_k_feature_importance: int,
         **model_kwargs,
     ):
@@ -121,6 +121,7 @@ class StaticModel(AbstractModel):
         self.metric_names = metrics
         self.curves = self.configure_curves(curves)
         self.curve_names = curves
+        self.error_analysis = error_analysis
         self.top_k_feature_importance = top_k_feature_importance
 
     def build_model(self):
@@ -169,6 +170,19 @@ class StaticModel(AbstractModel):
             type=str,
             action=YAMLStringListToList(str, choices=list(curve_map.keys())),
             help="(List of comma-separated strings) Name of curves/plots from sklearn.",
+        )
+        p.add_argument(
+            "--static-error-analysis",
+            dest="error_analysis",
+            action=YAMLStringListToList(str, choices=list(error_analysis_map.keys())),
+            help="(List of comma-separated strings) Name of which error analyses desired for static prediction.",
+        )
+        p.add_argument(
+            "--static-top-k-feature-importance",
+            dest="top_k_feature_importance",
+            type=int,
+            default=0,
+            help="Number of features to limit feature importances to.",
         )
         return p
 
@@ -274,12 +288,16 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 )
 
         # Error analysis
-        error_visualization(
-            data, labels, prefix, self.static_model.model, self.data.columns, self.seed
-        )
-        # model_randomness(
-        #     data, labels, prefix, self.static_model.model, self.data.columns, self.seed
-        # )
+        if self.static_model.error_analysis is not None:
+            for analysis_name in self.static_model.error_analysis:
+                error_analysis_map[analysis_name](
+                    data,
+                    labels,
+                    prefix,
+                    self.static_model.model,
+                    self.data.columns,
+                    self.seed,
+                )
 
         # Feature importance
         # Ref: https://machinelearningmastery.com/calculate-feature-importance-with-python/

@@ -71,28 +71,29 @@ def model_randomness(
     for comparison in comparisons:
         error_type, true_type = comparison  # unpack
         # for each feature
-        table[f"{comparison[0]}_vs_{comparison[1]}"] = {}
+        comparison_name = f"{comparison[0]}_vs_{comparison[1]}"
+        table[comparison_name] = {}
         for colidx, coln in enumerate(columns):
-            table[coln] = {}
-            table[coln]["test_used"] = []
-            table[coln]["test_result"] = []
-            # e.g. fn -> SBP (all rows)
+            table[comparison_name][coln] = {}
+            # e.g. fn_vs_tp -> SBP (all rows)
             dist_error = subsets[error_type][:, colidx]
             dist_true = subsets[true_type][:, colidx]
-            if len(dist_error) > 0:  # if there is any errors
+            # if there is any errors, skips anything less than 3 samples
+            if len(dist_error) > 2:  
                 if is_ctn(dist_error):  # continuous / quantitative
-                    if test_normality(dist_error):  # check normal
+                    # check normal (test rquires at least 3 data points)
+                    if test_normality(dist_error):
                         # Ref: https://www.statology.org/two-sample-t-test-python/
-                        table[coln]["test_used"].append("t_ind")
-                        table[coln]["test_result"].append(
+                        table[comparison_name][coln]["test_used"] = "t_ind"
+                        table[comparison_name][coln]["test_result"] = (
                             test_fail_to_reject(
                                 st.ttest_ind(dist_error, dist_true, random_state=seed)[1]
                             )
                         )
                     else:  # not normal
                         # Ref: https://www.statology.org/mann-whitney-u-test-python/
-                        table[coln]["test_used"].append("mannwhitney_u")
-                        table[coln]["test_result"].append(
+                        table[comparison_name][coln]["test_used"] = ("mannwhitney_u")
+                        table[comparison_name][coln]["test_result"] = (
                             test_fail_to_reject(st.mannwhitneyu(dist_error, dist_true)[1])
                         )
                 else:  # categorical / qualitative
@@ -102,18 +103,21 @@ def model_randomness(
                     categories, counts = unique(dist_true, return_counts=True)
                     true_counts = DataFrame(counts, index=categories, columns=[true_type])
                     contingency = error_counts.join(true_counts, how="outer").fillna(0).values
-                    if contingency.shape[1] == 2:  # binary
+                    if contingency.shape[0] == 2 and contingency.shape[1] == 2:  # expect 2x2
                         # Ref: https://www.statology.org/fishers-exact-test-python/
-                        table[coln]["test_used"].append("fisher_exact")
-                        table[coln]["test_result"].append(
+                        table[comparison_name][coln]["test_used"] = ("fisher_exact")
+                        table[comparison_name][coln]["test_result"] = (
                             test_fail_to_reject(st.fisher_exact(contingency)[1])
                         )
                     else:
                         # although technically frequencies/counts must be > 5 there's no other python alternatives for multicategorical
-                        table[coln]["test_used"].append("chi2")
-                        table[coln]["test_result"].append(
+                        table[comparison_name][coln]["test_used"] = ("chi2")
+                        table[comparison_name][coln]["test_result"] = (
                             test_fail_to_reject(st.chi2_contingency(contingency)[1])
                         )
+            else:  # cannot do the test
+                table[comparison_name][coln]["test_used"] = ("N/A")
+                table[comparison_name][coln]["test_result"] = ("N/A")
+    # TODO: the df is saving the dictionary of {test_used: ...,  tesT_result: ...} into each cell instead of multiindex.
     log_text(DataFrame(table).to_string(), f"{prefix}_dist_comparison_table.txt")
-    # TODO: log the metrics separately?
         

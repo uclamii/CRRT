@@ -1,3 +1,4 @@
+from logging import warn
 from mlflow import log_artifact, log_figure
 from matplotlib import pyplot as plt
 from mealy import ErrorAnalyzer, ErrorVisualizer
@@ -14,6 +15,9 @@ def error_visualization(
     columns: str,
     seed: int,
 ):
+    if len(data) < 100:
+        warn(f"Dataset {prefix} has less than 100 rows, cannot do error visualization.")
+        return
     try:
         error_analyzer = ErrorAnalyzer(
             model,

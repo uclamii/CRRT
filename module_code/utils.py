@@ -104,12 +104,6 @@ def add_global_args(
         default=False,
         help="Whether or not to run testing on the predictive model.",
     )
-    p.add_argument(
-        "--top-k-feature-importance",
-        type=int,
-        default=0,
-        help="Number of features to limit feature importances to.",
-    )
 
     # To be able to add these to the subparsers without conflicts
     # Ref: https://stackoverflow.com/a/62906328/1888794
