@@ -44,6 +44,13 @@ def add_global_args(
         default="feather",
         help="Name of serialization method to use for preprocessed df file.",
     )
+    p.add_argument(
+        "--patient-age",
+        type=str,
+        choices=["adult", "peds"],
+        default="adult",
+        help="Whether to evaluate on pediatric or adult patients (thresholded at age 21).",
+    )
 
     # Params for generating preprocessed df file
     time_p = p.add_argument_group("Time Interval and Windowing")

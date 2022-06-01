@@ -67,12 +67,11 @@ def load_outcomes(
     outcome_cols = positive_outcomes + negative_outcomes
 
     #### Filtering ####
-    # Exclude pediatric data, adults considered 21+
-    is_adult_mask = outcomes_df["Age"] >= 21
+
     # Each row should have exactly 1 1.0 value (one-hot of the 4 cols)
     exactly_one_outcome_mask = outcomes_df[outcome_cols].fillna(0).sum(axis=1) == 1
 
-    outcomes_df = outcomes_df[is_adult_mask & exactly_one_outcome_mask]
+    outcomes_df = outcomes_df[exactly_one_outcome_mask]
 
     # Drop missing pt ids
     outcomes_df = outcomes_df.dropna(subset=["IP_PATIENT_ID"])
@@ -279,4 +278,4 @@ def load_data(args: Namespace) -> pd.DataFrame:
     except IOError:
         df = process_and_serialize_raw_data(args, preprocessed_df_path)
 
-    return preprocess_data(df)
+    return preprocess_data(df, args)
