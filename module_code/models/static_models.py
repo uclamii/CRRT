@@ -36,6 +36,7 @@ from exp.utils import seed_everything
 from models.base_model import BaseSklearnPredictor, AbstractModel
 from evaluate.error_viz import error_visualization
 from evaluate.error_analysis import model_randomness
+from evaluate.explanability import lime_explainability
 from evaluate.feature_importance import log_feature_importances
 
 alg_map = {
@@ -97,7 +98,11 @@ curve_map = {
     "confusion_matrix": ConfusionMatrixDisplay,
 }
 
-error_analysis_map = {"visualize": error_visualization, "randomness": model_randomness}
+error_analysis_map = {
+    "visualize": error_visualization,
+    "randomness": model_randomness,
+    "explain": lime_explainability,
+}
 
 
 class StaticModel(AbstractModel):
