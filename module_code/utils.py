@@ -2,6 +2,7 @@ from argparse import ArgumentParser, Namespace, SUPPRESS
 from os.path import isfile
 import sys
 import yaml
+import regex
 from typing import Dict, Optional
 
 from data.argparse_utils import YAMLStringDictToDict
@@ -104,6 +105,12 @@ def add_global_args(
         default=False,
         help="Whether or not to run testing on the predictive model.",
     )
+    logging_p.add_argument(
+        "--tune-n-trials",
+        type=int,
+        default=None,
+        help="Set to integer value to turn on Optuna tuning. Find the settings for tuning in module/exp/utils.py.",
+    )
 
     # To be able to add these to the subparsers without conflicts
     # Ref: https://stackoverflow.com/a/62906328/1888794
@@ -186,6 +193,21 @@ def time_delta_to_str(delta: Dict[str, int]) -> str:
         if amount > 0:
             delta_str += f"{amount}{time_name[0].lower()}"
     return delta_str
+
+
+def time_delta_str_to_dict(delta_str: Optional[str]) -> Optional[Dict[str, int]]:
+    """
+    Inverse of time_delta_to_str.
+    Converts a str of format: YyMmDd for Y years M months and D days.
+    Into a dict: {YEARS: Y, MONTHS: M, DAYS: D}
+    """
+    if delta_str:
+        time_regex = r"(?:(?<YEARS>\d+)y)?(?:(?<MONTHS>\d+)m)?(?:(?<DAYS>\d+)d)?"
+        return {
+            k: int(v)
+            for k, v in regex.search(time_regex, delta_str).groupdict().items()
+        }
+    return None
 
 
 def get_preprocessed_file_name(
