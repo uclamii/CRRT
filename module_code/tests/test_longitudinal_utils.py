@@ -113,7 +113,8 @@ class TestAggregateFeature(unittest.TestCase):
             agg_values_col=self.agg_on,
             time_col=self.time_col,
         )
-        self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
+        # testing assert has a small tolernace for float differences
+        pd.testing.assert_frame_equal(correct_df, df.droplevel("Start Date"))
 
     @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
     def test_no_time_interval_cat(self, mock_masked_df):
@@ -133,7 +134,11 @@ class TestAggregateFeature(unittest.TestCase):
         correct_df.index.name = "IP_PATIENT_ID"
         mock_masked_df.return_value = self.cat_df
 
-        df = aggregate_cat_feature(self.cat_df, self.agg_on, time_col=self.time_col,)
+        df = aggregate_cat_feature(
+            self.cat_df,
+            self.agg_on,
+            time_col=self.time_col,
+        )
         self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
     @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
