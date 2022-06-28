@@ -26,8 +26,12 @@ Handle loading data / preprocess.
                         Logic to load data for pytorch-style pipelines (i.e. dynamic/longitudinal models).
                         |--- utils.py
                         Data loading utils in general (reading files, basic "homegrown" data transforms, etc.)
+            |- evaluate |
+            Logic for model evaluation (error analysis, feature importance, etc.)
             |--- exp    |
             Logic for experiments.
+                        |--- utils.py
+                        Help running experiments, such as hyperparameter grid definition, and experiment running (e.g. optuna).
             |--- models |
             Models used for predictive task
                         |--- base_model.py
@@ -40,9 +44,13 @@ Handle loading data / preprocess.
             One-off scripts to run before, or after experiments.
                         |--- deidentify_and_construct_features_outcomes.py
                         Deidentify Davita data for CRRT outcomes, slightly sanitize the data, and construct Age and Start Date. Age is constructed from DOB from Patient Identifiers, which is more reliable than "AGE" from Patient Demographics.
+                        |--- process_and_serialize_raw_data.py
+                        For static data we need to aggregate X days at a time, or maybe we change the data loading process for data range we already have, we can manually run the preprocessing steps here.
             |--- tests |
             |--- main.py
             Runs everything: loads the data and runs the predictive task with cv.  Produces a log file.
+            |--- utils.py
+            CLI arg utils to help run the script and incorporate any options/YAML files/etc.
 notebooks   |
 All notebooks here. Exploratory, or to generate figures, etc.
 ```
