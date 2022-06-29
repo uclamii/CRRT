@@ -2,7 +2,6 @@ from argparse import ArgumentParser, Namespace, SUPPRESS
 from os.path import isfile
 import sys
 import yaml
-import regex
 from typing import Dict, Optional
 
 from data.argparse_utils import YAMLStringDictToDict
@@ -193,21 +192,6 @@ def time_delta_to_str(delta: Dict[str, int]) -> str:
         if amount > 0:
             delta_str += f"{amount}{time_name[0].lower()}"
     return delta_str
-
-
-def time_delta_str_to_dict(delta_str: Optional[str]) -> Optional[Dict[str, int]]:
-    """
-    Inverse of time_delta_to_str.
-    Converts a str of format: YyMmDd for Y years M months and D days.
-    Into a dict: {YEARS: Y, MONTHS: M, DAYS: D}
-    """
-    if delta_str:
-        time_regex = r"(?:(?<YEARS>\d+)y)?(?:(?<MONTHS>\d+)m)?(?:(?<DAYS>\d+)d)?"
-        return {
-            k: int(v)
-            for k, v in regex.search(time_regex, delta_str).groupdict().items()
-        }
-    return None
 
 
 def get_preprocessed_file_name(

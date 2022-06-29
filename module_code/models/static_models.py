@@ -1,5 +1,5 @@
 from argparse import ArgumentParser, Namespace
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
@@ -30,16 +30,16 @@ import mlflow
 
 ## Local
 from data.sklearn_loaders import SklearnCRRTDataModule
-from data.argparse_utils import YAMLStringListToList
+from data.argparse_utils import YAMLStringDictToDict, YAMLStringListToList
 
-from exp.utils import seed_everything
+from models.utils import seed_everything
 from models.base_model import BaseSklearnPredictor, AbstractModel
 from evaluate.error_viz import error_visualization
 from evaluate.error_analysis import model_randomness
 from evaluate.explanability import lime_explainability
 from evaluate.feature_importance import log_feature_importances
 
-alg_map = {
+ALG_MAP = {
     "lgr": LogisticRegression,
     "svm": SVC,
     "knn": KNeighborsClassifier,
@@ -114,13 +114,14 @@ class StaticModel(AbstractModel):
         curves: List[str],
         error_analysis: List[str],
         top_k_feature_importance: int,
-        **model_kwargs,
+        model_kwargs: Dict[str, Any],
     ):
         super().__init__()
         self.seed = seed
         self.modeln = modeln
         self.model_kwargs = model_kwargs
-        self.model_kwargs["random_state"] = seed
+        if self.modeln not in {"knn", "nb"}:
+            self.model_kwargs["random_state"] = seed
         self.model = self.build_model()
         self.metrics = self.configure_metrics(metrics)
         self.metric_names = metrics
@@ -130,8 +131,8 @@ class StaticModel(AbstractModel):
         self.top_k_feature_importance = top_k_feature_importance
 
     def build_model(self):
-        if self.modeln in alg_map:
-            model_cls = alg_map[self.modeln]
+        if self.modeln in ALG_MAP:
+            model_cls = ALG_MAP[self.modeln]
         else:
             raise ValueError("The {} is not a valid model type".format(self.modeln))
         return model_cls(**self.model_kwargs)
@@ -159,8 +160,15 @@ class StaticModel(AbstractModel):
             dest="modeln",
             type=str,
             default="lgr",
-            choices=["lgr", "svm", "knn", "nb", "dt", "rf", "lgb", "xgb"],
+            choices=list(ALG_MAP.keys()),
             help="Name of model to use for learning.",
+        )
+        p.add_argument(
+            "--static-model-kwargs",
+            dest="model-kwargs",
+            action=YAMLStringDictToDict(),
+            default={},
+            help="Model kwargs corresponding to the model specified in modeln.",
         )
         p.add_argument(
             "--static-metrics",

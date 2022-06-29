@@ -1,5 +1,9 @@
 # Project Documentation
 
+Everything can be triggered from `main.py` and can be adjusted in `options.yml`. 
+Hyperparameter tuning is via optuna, the grid desired can be found in `module_code/exp/utils.py`.
+Experiment tracking is via mlflow.
+
 NOTE: Everytime the preprocesing changes, you need to delete the saved preprocessed file so the whole pipeline can start again.
 
 ## File Organization

@@ -1,17 +1,86 @@
-import os
-import torch
+from typing import Dict, Optional
+from numpy import arange, logspace
+import regex
 
-from utils import time_delta_str_to_dict
+from models.static_models import ALG_MAP
 
 
-def seed_everything(seed: int):
-    """Sets seeds and also makes cuda deterministic for pytorch."""
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+# Grid of hyperparameters for each type of model
+GRID_HP_MAP = {
+    "lgr": {
+        "penalty": ["l2", "elasticnet"],
+        "C": [0.1, 1, 10, 100, 1000],
+        "n_jobs": [-1],
+    },
+    "svm": {
+        "C": [0.1, 1, 10, 100, 1000],
+        "kernel": ["rbf", "poly", "sigmoid", "linear"],
+        "degree": [1, 2, 3, 4, 5, 6],
+        "gamma": [1, 0.1, 0.01, 0.001, 0.0001],
+    },
+    "knn": {
+        "weights": ["uniform", "distance"],
+        "leaf_size": [20, 25, 30, 35, 40],
+        "p": [1, 2],
+        "metric": ["minkowski", "chebyshev"],
+        "n_jobs": [-1],
+    },
+    "nb": {"alpha": [0.1, 1, 10, 100, 1000]},
+    "dt": {
+        "criterion": ["gini", "entropy"],
+        "max_depth": [10, 30, 100],
+        "max_features": ["auto", "sqrt"],
+        "min_samples_leaf": [1, 2],
+        "min_samples_split": [2, 5],
+    },
+    "lgb": {
+        "num_leaves": [20, 40, 60, 80, 100],
+        "min_child_samples": [5, 10, 15],
+        "max_depth": [-1, 5, 10, 20],
+        "learning_rate": [0.05, 0.1, 0.2],
+        "reg_alpha": [0, 0.01, 0.03],
+    },
+    "xgb": {
+        "learning_rate": [0.001, 0.05, 0.10, 0.15],
+        "max_depth": [8, 10, 12],
+        "min_child_weight": [1],
+        "gamma": [0.5, 0.8, 1],
+        "colsample_bytree": [0.5, 0.7, 0.9],
+        "early_stopping_rounds": [10],
+        "reg_alpha": [0.001, 0.05, 0.10, 0.15],
+        "reg_lambda": [0.001, 0.05, 0.10, 0.15],
+        "n_estimators": list(arange(10, 100, 10))
+        + list(arange(100, 1550, 100))
+        + list(arange(2000, 10050, 1000)),
+    },
+}
+
+# random forest hp is just decision tree with some more options.
+GRID_HP_MAP["rf"] = (
+    GRID_HP_MAP["dt"]
+    .copy()
+    .update(
+        {
+            "bootstrap": [True, False],
+            "n_estimators": list(arange(10, 100, 10)) + list(arange(100, 1050, 100)),
+        }
+    )
+)
+
+
+def time_delta_str_to_dict(delta_str: Optional[str]) -> Optional[Dict[str, int]]:
+    """
+    Inverse of time_delta_to_str.
+    Converts a str of format: YyMmDd for Y years M months and D days.
+    Into a dict: {YEARS: Y, MONTHS: M, DAYS: D}
+    """
+    if delta_str:
+        time_regex = r"(?:(?<YEARS>\d+)y)?(?:(?<MONTHS>\d+)m)?(?:(?<DAYS>\d+)d)?"
+        return {
+            k: int(v) if v else 0
+            for k, v in regex.search(time_regex, delta_str).groupdict().items()
+        }
+    return None
 
 
 def get_optuna_grid(experiment_name: str, trials):
@@ -19,13 +88,26 @@ def get_optuna_grid(experiment_name: str, trials):
         feature_selection_method = trials.suggest_categorical(
             "feature_selection", ["top-k", "corr_thresh"]
         )
+        # modeln = trials.suggest_categorical("modeln", (ALG_MAP.keys()))
+        modeln = "xgb"
+
         params = {
             "pre_start_delta": time_delta_str_to_dict(
                 trials.suggest_categorical(
-                    "pre_start_delta", ["3m", "1m", "14d", "7d", "5d", "3d", "1d"]
+                    # "pre_start_delta", ["3m", "1m", "14d", "7d", "5d", "3d", "1d"]
+                    "pre_start_delta",
+                    ["1d"],
                 )
             ),
+            # "modeln": modeln,
+            # Since GRID_HP_MAP is just list of choices we'll use suggest_categorical
+            "model_kwargs": {
+                k: trials.suggest_categorical(k, v)
+                # If we dont have it in the grid just use default kwargs (by setting {})
+                for k, v in GRID_HP_MAP.get(modeln, {}).items()
+            },
         }
+
         if feature_selection_method == "top-k":
             params["top_k_feature_importance"] = trials.suggest_int(
                 "top_k_feature_importance", 3, 20, step=5
@@ -34,4 +116,5 @@ def get_optuna_grid(experiment_name: str, trials):
             params["corr_thresh"] = trials.suggest_float(
                 "corr_thresh", 0.1, 0.9, step=0.1
             )
+
         return params

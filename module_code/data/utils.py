@@ -76,21 +76,23 @@ def read_files_and_combine(
     return combined
 
 
-def convert_nans_to_zeros(val):
-    if math.isnan(val):
-        return 0
-    else:
-        return val
-
-
 def f_pearsonr(X: pd.DataFrame, labels: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
     """
     Use correlation of features to the labels as a scoring function
     for sklearn feature selection.
     """
-    scores_and_pvalues = X.apply(lambda feature: pearsonr(feature, labels), axis=0)
-    scores, pvalues = zip(*scores_and_pvalues)
-    return (convert_nans_to_zeros(scores), pvalues)
+    if isinstance(X, pd.DataFrame):
+        scores_and_pvalues = X.apply(lambda feature: pearsonr(feature, labels), axis=0)
+        scores, pvalues = zip(*scores_and_pvalues)
+        scores = scores.fillna(0)
+    else:
+        # Numpy will automatically unpack the 2 rows into each var
+        scores, pvalues = np.apply_along_axis(
+            lambda feature: pearsonr(feature, labels), 0, X
+        )
+        scores = np.nan_to_num(scores, nan=0)
+
+    return (scores, pvalues)
 
 
 class SelectThreshold(_BaseFilter):
