@@ -32,7 +32,7 @@ import mlflow
 from data.sklearn_loaders import SklearnCRRTDataModule
 from data.argparse_utils import YAMLStringDictToDict, YAMLStringListToList
 
-from models.utils import seed_everything
+from models.utils import has_gpu, seed_everything
 from models.base_model import BaseSklearnPredictor, AbstractModel
 from evaluate.error_viz import error_visualization
 from evaluate.error_analysis import model_randomness
@@ -122,6 +122,8 @@ class StaticModel(AbstractModel):
         self.model_kwargs = model_kwargs
         if self.modeln not in {"knn", "nb"}:
             self.model_kwargs["random_state"] = seed
+        if self.modeln == "xgb" and has_gpu():
+            self.model_kwargs["tree_method"] = "gpu_hist"
         self.model = self.build_model()
         self.metrics = self.configure_metrics(metrics)
         self.metric_names = metrics
