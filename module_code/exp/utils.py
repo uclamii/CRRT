@@ -1,9 +1,5 @@
 from typing import Dict, Optional
-from numpy import arange, logspace
 import regex
-
-from models.static_models import ALG_MAP
-
 
 # Grid of hyperparameters for each type of model
 GRID_HP_MAP = {
@@ -49,9 +45,9 @@ GRID_HP_MAP = {
         "early_stopping_rounds": [10],
         "reg_alpha": [0.001, 0.05, 0.10, 0.15],
         "reg_lambda": [0.001, 0.05, 0.10, 0.15],
-        "n_estimators": list(arange(10, 100, 10))
-        + list(arange(100, 1550, 100))
-        + list(arange(2000, 10050, 1000)),
+        "n_estimators": list(range(10, 100, 10))
+        + list(range(100, 1550, 100))
+        + list(range(2000, 10050, 1000)),
     },
 }
 
@@ -62,7 +58,7 @@ GRID_HP_MAP["rf"] = (
     .update(
         {
             "bootstrap": [True, False],
-            "n_estimators": list(arange(10, 100, 10)) + list(arange(100, 1050, 100)),
+            "n_estimators": list(range(10, 100, 10)) + list(range(100, 1050, 100)),
         }
     )
 )
@@ -110,11 +106,15 @@ def get_optuna_grid(experiment_name: str, trials):
 
         if feature_selection_method == "top-k":
             params["top_k_feature_importance"] = trials.suggest_int(
-                "top_k_feature_importance", 3, 20, step=5
+                "top_k_feature_importance", 3, 18, step=5
             )
         else:
             params["corr_thresh"] = trials.suggest_float(
-                "corr_thresh", 0.1, 0.9, step=0.1
+                # "corr_thresh", 0.1, 0.9, step=0.1
+                "corr_thresh",
+                0.01,
+                0.09,
+                step=0.005,
             )
 
         return params
