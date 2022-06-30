@@ -1,7 +1,10 @@
 from argparse import Namespace
 from os.path import join
 import mlflow.pytorch
-import optuna
+from mlflow.tracking import MlflowClient
+from optuna import create_study, Study
+from optuna.samplers import TPESampler
+import yaml
 
 from data.load import load_data
 from exp.cv import run_cv
@@ -35,13 +38,34 @@ def main(args: Namespace, trials=None):
         # Autologging
         mlflow.autolog()
 
-        with mlflow.start_run(run_name=args.run_name):
+        run_name = args.run_name
+        if args.tune_n_trials:
+            run_name += f" // tune trial: {trials.number}"
+        with mlflow.start_run(run_name=run_name):
             # Log all cli args as tags
             mlflow.set_tags(vars(args))
             # run experiment
             results_dict = experiment_function(preprocessed_df, *experiment_args)
     else:
         results_dict = experiment_function(preprocessed_df, *experiment_args)
+    # So Optuna can compare and pick best trial
+    return results_dict[f"{args.modeln}_val__{args.tune_metric}"]
+
+
+def store_best_trial_mlflow_run(args: Namespace, study: Study):
+    """Store the mlflow run id of the best optuna trial for evaluation later."""
+    best_trial = study.best_trial
+    client = MlflowClient(join(args.local_log_path, "mlruns"))
+    # Get the trial based on the number
+    # Get most recent hyperparameter trial for the given run name
+    best_run = client.search_runs(
+        experiment_ids=client.get_experiment_by_name(args.experiment).experiment_id,
+        filter_string=f"tags.mlflow.runName='{args.run_name} // tune trial: {best_trial.number}'",
+        order_by=["attributes.start_time"],
+    )[0]
+    # Add or update mlflow run id to the options.yml file
+    with open(join(args.local_log_path, "tune_results.yml"), "w") as tune_results:
+        yaml.safe_dump({"best-run-id": best_run.info.run_id}, tune_results)
 
 
 if __name__ == "__main__":
@@ -50,8 +74,14 @@ if __name__ == "__main__":
 
     # Optionally run tuning
     if args.tune_n_trials:
-        study = optuna.create_study(study_name=args.experiment)
+        study = create_study(
+            study_name=args.experiment,
+            direction=args.tune_direction,
+            sampler=TPESampler(),
+        )
         # Ref: https://optuna.readthedocs.io/en/stable/faq.html#how-to-define-objective-functions-that-have-own-arguments
         study.optimize(lambda trial: main(args, trial), n_trials=args.tune_n_trials)
+
+        store_best_trial_mlflow_run(args, study)
     else:
         main(args)

@@ -1,6 +1,7 @@
 from argparse import ArgumentParser, Namespace, SUPPRESS
 from os.path import isfile
 import sys
+from requests import options
 import yaml
 from typing import Dict, Optional
 
@@ -8,7 +9,7 @@ from data.argparse_utils import YAMLStringDictToDict
 from data.torch_loaders import TorchCRRTDataModule
 from data.sklearn_loaders import SklearnCRRTDataModule
 from models.longitudinal_models import LongitudinalModel
-from models.static_models import StaticModel
+from models.static_models import METRIC_MAP, StaticModel
 
 
 def add_global_args(
@@ -109,6 +110,20 @@ def add_global_args(
         type=int,
         default=None,
         help="Set to integer value to turn on Optuna tuning. Find the settings for tuning in module/exp/utils.py.",
+    )
+    logging_p.add_argument(
+        "--tune-metric",
+        type=str,
+        default="auroc",
+        choices=list(METRIC_MAP.keys()),
+        help="Name of metric to use to select best trial when hyperparameter tuning.",
+    )
+    logging_p.add_argument(
+        "--tune-direction",
+        type=str,
+        default="maximize",
+        choices=["maximize", "minimize"],
+        help="Whether the best metric is the max value or the min value.",
     )
 
     # To be able to add these to the subparsers without conflicts
