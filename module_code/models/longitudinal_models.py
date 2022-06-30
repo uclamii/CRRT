@@ -16,7 +16,6 @@ import torchmetrics
 # commented b/c my system can't install sktime because it's 64 bit
 from sktime.classification.base import BaseClassifier
 from sktime.classification.hybrid import HIVECOTEV1
-from sktime.classification.kernel_based import ROCKETClassifier
 
 # Local
 from data.torch_loaders import TorchCRRTDataModule
@@ -162,9 +161,6 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
         # TODO: when calling fit in the wrapper class, just call fit on the model on the data, they should work liike sklearn models so the pytorch datamodule can be used even then
         if self.hparams.modeln == "hivecote":
             return HIVECOTEV1(n_jobs=-1, random_state=self.seed)
-        # https://www.sktime.org/en/stable/api_reference/auto_generated/sktime.classification.kernel_based.ROCKETClassifier.html
-        elif self.hparams.modeln == "rocket":
-            return ROCKETClassifier(n_jobs=-1, random_state=self.seed)
         elif self.hparams.modeln == "lstm":
             return ModuleDict(
                 {
@@ -222,7 +218,7 @@ class LongitudinalModel(pl.LightningModule, AbstractModel):
             dest="modeln",
             type=str,
             default="lstm",
-            choices=["lstm", "hivecote", "rocket"],
+            choices=["lstm", "hivecote"],
             help="Name of model to use for continuous learning.",
         )
         p.add_argument(
