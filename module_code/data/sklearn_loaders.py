@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from typing import Callable, Optional, Tuple, Union
+from typing import Callable, Dict, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 
@@ -34,8 +34,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         test_split_size: float,
         # val comes from train := (1 - test_split_size) * val_split_size
         val_split_size: float,
-        kbest=None,
-        corr_thresh=None,
+        kbest: int = None,
+        corr_thresh: float = None,
+        filters: Dict[str, Callable] = None,
     ):
         super().__init__()
         self.seed = seed
@@ -48,6 +49,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         ).columns.union(ADDITIONAL_CATEGORICAL_COLS)
         self.kbest = kbest
         self.corr_thresh = corr_thresh
+        self.filters = filters
 
     def setup(self, stage: Optional[str] = None):
         """
@@ -69,6 +71,14 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.nfeatures = X.shape[1]
 
         train_tuple, val_tuple, test_tuple = self.split_dataset(X, y)
+
+        # Apply filters for subpopulation analysis later
+        # MUST OCCUR BEFORE TRANSFORM (before feature selection)
+        if self.filters:
+            # We set up filters ahead of time so that we don't have to worry about feature selection
+            self.train_filters = {k: v(train_tuple[0]) for k, v in self.filters.items()}
+            self.val_filters = {k: v(val_tuple[0]) for k, v in self.filters.items()}
+            self.test_filters = {k: v(test_tuple[0]) for k, v in self.filters.items()}
 
         # fit pipeline on train, call transform in get_item of dataset
         self.data_transform = self.get_post_split_transform(train_tuple)
@@ -111,6 +121,11 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
 
         data, labels = train
         pipeline.fit(data, labels)
+        # Save which features will get selected
+        # TODO: Log this?
+        self.selected_columns_mask = pipeline.named_steps[
+            "feature-selection"
+        ].get_support()
 
         return pipeline.transform
 

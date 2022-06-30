@@ -51,7 +51,7 @@ ALG_MAP = {
 }
 
 # gt = ground truth
-metric_map = {
+METRIC_MAP = {
     "auroc": lambda gt, pred_probs, decision_thresh: roc_auc_score(gt, pred_probs),
     "ap": lambda gt, pred_probs, decision_thresh: average_precision_score(
         gt, pred_probs
@@ -123,7 +123,10 @@ class StaticModel(AbstractModel):
         if self.modeln not in {"knn", "nb"}:
             self.model_kwargs["random_state"] = seed
         if self.modeln == "xgb" and has_gpu():
-            self.model_kwargs["tree_method"] = "gpu_hist"
+            self.model_kwargs["use_label_encoder"] = False  # get rid of warning
+            self.model_kwargs["eval_metric"] = "logloss"  # get rid of warning
+            # self.model_kwargs["tree_method"] = "gpu_hist"  # installing py-xgboost-gpu is not working
+            pass
         self.model = self.build_model()
         self.metrics = self.configure_metrics(metrics)
         self.metric_names = metrics
@@ -143,7 +146,7 @@ class StaticModel(AbstractModel):
         """Pick metrics."""
         if metric_names is None:
             return None
-        return [metric_map[metric] for metric in metric_names]
+        return [METRIC_MAP[metric] for metric in metric_names]
 
     def configure_curves(self, curve_names: List[str]) -> List[Callable]:
         """Pick plots."""
@@ -176,7 +179,7 @@ class StaticModel(AbstractModel):
             "--static-metrics",
             dest="metrics",
             type=str,
-            action=YAMLStringListToList(str, choices=list(metric_map.keys())),
+            action=YAMLStringListToList(str, choices=list(METRIC_MAP.keys())),
             help="(List of comma-separated strings) Name of metrics from sklearn.",
         )
         p.add_argument(
@@ -240,28 +243,29 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     def predict_proba(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
         return self.static_model.model.predict_proba(X)
 
+    def predict(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
+        return self.static_model.model.predict(X)
+
     def evaluate(
         self,
         stage: str,
-        filters: Optional[
-            Dict[str, Union[pd.Series, Callable[[pd.DataFrame], pd.Series]]]
-        ] = None,
-    ):
+    ) -> Dict[str, Any]:
         """
         Can additionally pass filters for subsets to evaluate performance.
         The filters can be either the bool series filter itself, or a function that produces one given the df.
         """
         X, y = getattr(self.data, stage)
+        columns = self.data.columns[self.data.selected_columns_mask]
+        X = pd.DataFrame(X, columns=columns)
         ## Evaluate on split of dataset (train, val, test) ##
-        self.eval_and_log(X, y, prefix=f"{self.static_model.modeln}_{stage}_")
+        metrics = self.eval_and_log(
+            X.values, y, prefix=f"{self.static_model.modeln}_{stage}_"
+        )
 
-        X = pd.DataFrame(X, columns=self.data.columns)
         ## Evaluate for each filter ##
+        filters = getattr(self.data, f"{stage}_filters")
         if filters is not None:
             for filter_n, filter in filters.items():
-                if isinstance(filter, Callable):
-                    filter = filter(X)
-
                 # If we don't ask for values sklearn will complain it was fitted without feature names
                 self.eval_and_log(
                     X.values[filter],
@@ -269,26 +273,28 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                     prefix=f"{self.static_model.modeln}_{stage}_{filter_n}_",
                 )
 
+        return metrics
+
     def eval_and_log(
         self,
         data: np.ndarray,
         labels: np.ndarray,
         prefix: str,
         decision_threshold: float = 0.5,
-    ):
+    ) -> Dict[str, Any]:
         """Logs metrics and curves/plots."""
+        metrics = None
         # Metrics
         if self.static_model.metric_names is not None:
-            mlflow.log_metrics(
-                {
-                    f"{prefix}_{metric_name}": metric_fn(
-                        labels, self.predict_proba(data)[:, 1], decision_threshold
-                    )
-                    for metric_name, metric_fn in zip(
-                        self.static_model.metric_names, self.static_model.metrics
-                    )
-                }
-            )
+            metrics = {
+                f"{prefix}_{metric_name}": metric_fn(
+                    labels, self.predict_proba(data)[:, 1], decision_threshold
+                )
+                for metric_name, metric_fn in zip(
+                    self.static_model.metric_names, self.static_model.metrics
+                )
+            }
+            mlflow.log_metrics(metrics)
 
         # Curves/Plots
         if self.static_model.curve_names is not None:
@@ -326,3 +332,4 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.data.columns,
                 self.seed,
             )
+        return metrics

@@ -106,7 +106,7 @@ class SelectThreshold(_BaseFilter):
     def _get_support_mask(self):
         check_is_fitted(self)
 
-        scores = _clean_nans(self.scores_)
+        scores = abs(_clean_nans(self.scores_))
         mask = scores > self.threshold
         ties = np.where(scores == self.threshold)[0]
         if len(ties):
