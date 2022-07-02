@@ -6,14 +6,7 @@ from mlflow import log_figure
 import lime
 import lime.lime_tabular
 
-from evaluate.error_analysis import filter_fns, is_ctn
-
-
-def is_cat(
-    feature_values: ndarray, threshold: float = 0.05, long_tailed: bool = False
-) -> bool:
-    # TODO: this is too basic of a heuristic, it's capturing dx_CCS_CODEs
-    return not is_ctn(feature_values, threshold, long_tailed)
+from evaluate.error_analysis import filter_fns
 
 
 def lime_explainability(
@@ -22,16 +15,16 @@ def lime_explainability(
     prefix: str,
     model: ClassifierMixin,
     columns: List[str],
+    categorical_columns: List[int],
     seed: int,
 ):
     # index corresponding to categorical columns.
-    categorical_features = argwhere(apply_along_axis(is_cat, 0, data)).squeeze()
     explainer = lime.lime_tabular.LimeTabularExplainer(
         data,
         feature_names=columns,
         class_names=["Do not Recommend", "Recommend"],
-        categorical_features=categorical_features,
-        # categorical_names=categorical_names,
+        # Requires indices
+        categorical_features=[columns.get_loc(col) for col in categorical_columns],
         random_state=seed,
     )
     preds = model.predict(data)

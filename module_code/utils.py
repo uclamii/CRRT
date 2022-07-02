@@ -52,6 +52,13 @@ def add_global_args(
         default="adult",
         help="Whether to evaluate on pediatric or adult patients (thresholded at age 21).",
     )
+    p.add_argument(
+        "--stage",
+        type=str,
+        default=None,
+        choices=["train", "tune", "eval"],
+        help="Distinguish a run where each run is a separate stage (intead of all in one). e.g., running training separate from evaluation.",
+    )
 
     # Params for generating preprocessed df file
     time_p = p.add_argument_group("Time Interval and Windowing")

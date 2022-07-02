@@ -42,7 +42,8 @@ GRID_HP_MAP = {
         "min_child_weight": [1],
         "gamma": [0.5, 0.8, 1],
         "colsample_bytree": [0.5, 0.7, 0.9],
-        "early_stopping_rounds": [10],
+        # this is for fit and not for the classifier itself
+        # "early_stopping_rounds": [10],
         "reg_alpha": [0.001, 0.05, 0.10, 0.15],
         "reg_lambda": [0.001, 0.05, 0.10, 0.15],
         "n_estimators": list(range(10, 100, 10))
@@ -79,13 +80,11 @@ def time_delta_str_to_dict(delta_str: Optional[str]) -> Optional[Dict[str, int]]
     return None
 
 
-def get_optuna_grid(experiment_name: str, trials):
+def get_optuna_grid(modeln: str, experiment_name: str, trials):
     if experiment_name == "static_learning":
         feature_selection_method = trials.suggest_categorical(
             "feature_selection", ["top-k", "corr_thresh"]
         )
-        # modeln = trials.suggest_categorical("modeln", (ALG_MAP.keys()))
-        modeln = "xgb"
 
         params = {
             "pre_start_delta": time_delta_str_to_dict(

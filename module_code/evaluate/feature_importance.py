@@ -27,6 +27,7 @@ def log_feature_importances(
     columns: List[str],
     seed: int,
 ):
+    # TODO: inject feature names
     if isinstance(model, LogisticRegression) or isinstance(model, SVC):
         importance = model.coef_[0]
     elif (

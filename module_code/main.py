@@ -2,15 +2,17 @@ from argparse import Namespace
 from os.path import join
 import mlflow.pytorch
 from mlflow.tracking import MlflowClient
-from optuna import create_study, Study
+from mlflow.entities import Run
+from optuna import Study, create_study
+from optuna.trial import FrozenTrial
 from optuna.samplers import TPESampler
-import yaml
 
 from data.load import load_data
 from exp.cv import run_cv
 from exp.static_learning import static_learning
 from exp.ctn_learning import continuous_learning
-from exp.utils import get_optuna_grid
+from exp.utils import get_optuna_grid, time_delta_str_to_dict
+from module_code.models.static_models import ALG_MAP
 from utils import load_cli_args, init_cli_args
 
 
@@ -18,7 +20,7 @@ def main(args: Namespace, trials=None):
     # Ref: https://github.com/optuna/optuna/issues/862
     # trials will override any other updating of params from CLI or options.yml because it comes last after load/init args.
     if trials is not None:
-        params = get_optuna_grid(args.experiment, trials)
+        params = get_optuna_grid(args.modeln, args.experiment, trials)
         # update args in place
         dargs = vars(args)
         dargs.update(params)
@@ -36,11 +38,16 @@ def main(args: Namespace, trials=None):
         mlflow.set_tracking_uri(f"file://{join(args.local_log_path, 'mlruns')}")
         mlflow.set_experiment(experiment_name=args.experiment)
         # Autologging
-        mlflow.autolog()
+        mlflow.autolog(log_models=False)
 
+        # Adjusting run name if tuning/evaluating/etc.
         run_name = args.run_name
-        if args.tune_n_trials:
+        # In eval mode after tuning
+        if args.tune_n_trials and args.stage == "eval":
+            run_name += f" // eval best"
+        elif args.tune_n_trials:  # Just tuning
             run_name += f" // tune trial: {trials.number}"
+
         with mlflow.start_run(run_name=run_name):
             # Log all cli args as tags
             mlflow.set_tags(vars(args))
@@ -52,36 +59,67 @@ def main(args: Namespace, trials=None):
     return results_dict[f"{args.modeln}_val__{args.tune_metric}"]
 
 
-def store_best_trial_mlflow_run(args: Namespace, study: Study):
-    """Store the mlflow run id of the best optuna trial for evaluation later."""
-    best_trial = study.best_trial
+def get_mlflow_model_uri(best_run: Run) -> str:
+    return best_run.info.artifact_uri[len("file://") :] + f"/static_model.pkl"
+
+
+def get_best_trial_mlflow_run(
+    args: Namespace, best_trial: FrozenTrial, serialize: bool = False
+) -> Run:
+    """Get the mlflow run id of the best optuna trial for evaluation."""
+    best_args = best_trial.params
     client = MlflowClient(join(args.local_log_path, "mlruns"))
-    # Get the trial based on the number
+    # Get the trial based on the number (0 indexed)
     # Get most recent hyperparameter trial for the given run name
     best_run = client.search_runs(
         experiment_ids=client.get_experiment_by_name(args.experiment).experiment_id,
         filter_string=f"tags.mlflow.runName='{args.run_name} // tune trial: {best_trial.number}'",
-        order_by=["attributes.start_time"],
+        order_by=["attributes.start_time DESC"],
     )[0]
-    # Add or update mlflow run id to the options.yml file
-    with open(join(args.local_log_path, "tune_results.yml"), "w") as tune_results:
-        yaml.safe_dump({"best-run-id": best_run.info.run_id}, tune_results)
+    return best_run
+
+
+def evaluate_post_tuning(args: Namespace, study: Study):
+    best_trial = study.best_trial
+    best_run = get_best_trial_mlflow_run(args, best_trial)
+    # Update the delta since it would be type str
+    best_trial.params["pre_start_delta"] = time_delta_str_to_dict(
+        best_trial.params["pre_start_delta"]
+    )
+    # Update with best params and with the run id.
+    best_model_path = get_mlflow_model_uri(best_run)
+    dargs = vars(args)
+    # It's fine to add to args since this is the last run and it won't sully the previous trials (or "coming" runs)
+    dargs.update(
+        {
+            **best_trial.params,
+            "best_run_id": best_run.info.run_id,
+            "best_model_path": best_model_path,
+            "stage": "eval",
+        }
+    )
+    # Run
+    main(args)
 
 
 if __name__ == "__main__":
     load_cli_args()
     args = init_cli_args()
 
-    # Optionally run tuning
+    # Optionally run tuning, then evaluate
     if args.tune_n_trials:
         study = create_study(
             study_name=args.experiment,
             direction=args.tune_direction,
-            sampler=TPESampler(),
+            sampler=TPESampler(seed=args.seed),
         )
-        # Ref: https://optuna.readthedocs.io/en/stable/faq.html#how-to-define-objective-functions-that-have-own-arguments
-        study.optimize(lambda trial: main(args, trial), n_trials=args.tune_n_trials)
+        # for modeln in ALG_MAP.keys():
+        for modeln in ["xgb"]:
+            args.modeln = modeln
+            # Ref: https://optuna.readthedocs.io/en/stable/faq.html#how-to-define-objective-functions-that-have-own-arguments
+            study.optimize(lambda trial: main(args, trial), n_trials=args.tune_n_trials)
 
-        store_best_trial_mlflow_run(args, study)
+        # Evaluate mode
+        evaluate_post_tuning(args, study)
     else:
         main(args)

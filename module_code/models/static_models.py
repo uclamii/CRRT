@@ -1,5 +1,5 @@
 from argparse import ArgumentParser, Namespace
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Union
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
@@ -10,6 +10,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
+from pandas import Index
 
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
@@ -199,7 +200,7 @@ class StaticModel(AbstractModel):
             "--static-top-k-feature-importance",
             dest="top_k_feature_importance",
             type=int,
-            default=0,
+            default=None,
             help="Number of features to limit feature importances to.",
         )
         return p
@@ -212,9 +213,8 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     Implements fit and transform.
     """
 
-    def __init__(self, seed: int, runtest: bool, **kwargs):
+    def __init__(self, seed: int, **kwargs):
         self.seed = seed
-        self.runtest = runtest
         self.static_model = StaticModel(seed=seed, **kwargs)
 
     @classmethod
@@ -223,16 +223,30 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     ) -> "CRRTStaticPredictor":
         return super().from_argparse_args(StaticModel, args, **kwargs)
 
-    # TODO: This needs to be changed for the serialization of the static models
-    def load_model(self, serialized_model_path: str) -> None:
-        pass
+    def log_model(self):
+        if self.static_model.modeln == "xgb":
+            mlflow.xgboost.log_model(self.static_model.model, "static_model.pkl")
+        elif self.static_model.modeln == "lgb":
+            mlflow.lightgbm.log_model(self.static_model.model, "static_model.pkl")
+        else:
+            mlflow.sklearn.log_model(self.static_model.model, "static_model.pkl")
+
+    def load_model(self, serialized_static_model_path: str) -> None:
+        loaded_model = None
+        if self.static_model.modeln == "xgb":
+            loaded_model = mlflow.xgboost.load_model(serialized_static_model_path)
+        elif self.static_model.modeln == "lgb":
+            loaded_model = mlflow.lightgbm.load_model(serialized_static_model_path)
+        else:
+            loaded_model = mlflow.sklearn.load_model(serialized_static_model_path)
+        self.static_model.model = loaded_model
+        # with open(serialized_static_model_path, "rb") as model_path:
+        # self.static_model.model = load(model_path)
 
     def fit(self, data: SklearnCRRTDataModule):
         seed_everything(self.seed)
-        self.data = data
-        # self.data.setup()
-
-        self.static_model.model.fit(*self.data.train)
+        self.static_model.model.fit(*data.train)
+        self.log_model()
         return self
 
     def transform(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
@@ -248,29 +262,35 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
     def evaluate(
         self,
+        data: SklearnCRRTDataModule,
         stage: str,
     ) -> Dict[str, Any]:
         """
         Can additionally pass filters for subsets to evaluate performance.
         The filters can be either the bool series filter itself, or a function that produces one given the df.
         """
-        X, y = getattr(self.data, stage)
-        columns = self.data.columns[self.data.selected_columns_mask]
+        X, y = getattr(data, stage)
+        columns = data.columns[data.selected_columns_mask]
+        categorical_columns = data.categorical_columns.intersection(columns)
         X = pd.DataFrame(X, columns=columns)
         ## Evaluate on split of dataset (train, val, test) ##
         metrics = self.eval_and_log(
-            X.values, y, prefix=f"{self.static_model.modeln}_{stage}_"
+            X,
+            y,
+            prefix=f"{self.static_model.modeln}_{stage}_",
+            categorical_columns=categorical_columns,
         )
 
         ## Evaluate for each filter ##
-        filters = getattr(self.data, f"{stage}_filters")
+        filters = getattr(data, f"{stage}_filters")
         if filters is not None:
             for filter_n, filter in filters.items():
                 # If we don't ask for values sklearn will complain it was fitted without feature names
                 self.eval_and_log(
-                    X.values[filter],
-                    y.values[filter],
+                    X[filter.values],
+                    y[filter.values],
                     prefix=f"{self.static_model.modeln}_{stage}_{filter_n}_",
+                    categorical_columns=categorical_columns,
                 )
 
         return metrics
@@ -280,6 +300,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         data: np.ndarray,
         labels: np.ndarray,
         prefix: str,
+        categorical_columns: Union[List[str], Index],
         decision_threshold: float = 0.5,
     ) -> Dict[str, Any]:
         """Logs metrics and curves/plots."""
@@ -312,24 +333,25 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         if self.static_model.error_analysis is not None:
             for analysis_name in self.static_model.error_analysis:
                 error_analysis_map[analysis_name](
-                    data,
+                    data.values,
                     labels,
                     prefix,
                     self.static_model.model,
-                    self.data.columns,
+                    data.columns,
+                    categorical_columns,
                     self.seed,
                 )
 
         # Feature importance
         # Ref: https://machinelearningmastery.com/calculate-feature-importance-with-python/
-        if self.static_model.top_k_feature_importance:
+        if self.static_model.top_k_feature_importance is not None:
             log_feature_importances(
                 self.static_model.top_k_feature_importance,
                 data,
                 labels,
                 prefix,
                 self.static_model.model,
-                self.data.columns,
+                data.columns,
                 self.seed,
             )
         return metrics
