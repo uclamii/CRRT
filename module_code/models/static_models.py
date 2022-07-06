@@ -171,7 +171,7 @@ class StaticModel(AbstractModel):
         )
         p.add_argument(
             "--static-model-kwargs",
-            dest="model-kwargs",
+            dest="model_kwargs",
             action=YAMLStringDictToDict(),
             default={},
             help="Model kwargs corresponding to the model specified in modeln.",
