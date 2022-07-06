@@ -42,12 +42,10 @@ from evaluate.feature_importance import log_feature_importances
 
 ALG_MAP = {
     "lgr": LogisticRegression,
-    "svm": SVC,
-    "knn": KNeighborsClassifier,
-    "nb": MultinomialNB,
-    "dt": DecisionTreeClassifier,
+    # "knn": KNeighborsClassifier,
+    # "dt": DecisionTreeClassifier,
     "rf": RandomForestClassifier,
-    "lgb": LGBMClassifier,
+    # "lgb": LGBMClassifier,
     "xgb": XGBClassifier,
 }
 
@@ -309,7 +307,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         if self.static_model.metric_names is not None:
             metrics = {
                 f"{prefix}_{metric_name}": metric_fn(
-                    labels, self.predict_proba(data)[:, 1], decision_threshold
+                    labels, self.predict_proba(data.values)[:, 1], decision_threshold
                 )
                 for metric_name, metric_fn in zip(
                     self.static_model.metric_names, self.static_model.metrics
@@ -323,7 +321,9 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.curve_names, self.static_model.curves
             ):
                 mlflow.log_figure(
-                    curve.from_predictions(labels, self.predict_proba(data)[:, 1])
+                    curve.from_predictions(
+                        labels, self.predict_proba(data.values)[:, 1]
+                    )
                     .plot()
                     .figure_,
                     f"{prefix}_{curve_name}.png",
@@ -347,7 +347,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         if self.static_model.top_k_feature_importance is not None:
             log_feature_importances(
                 self.static_model.top_k_feature_importance,
-                data,
+                data.values,
                 labels,
                 prefix,
                 self.static_model.model,

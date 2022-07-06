@@ -113,8 +113,7 @@ if __name__ == "__main__":
             direction=args.tune_direction,
             sampler=TPESampler(seed=args.seed),
         )
-        # for modeln in ALG_MAP.keys():
-        for modeln in ["xgb"]:
+        for modeln in ALG_MAP.keys():
             args.modeln = modeln
             # Ref: https://optuna.readthedocs.io/en/stable/faq.html#how-to-define-objective-functions-that-have-own-arguments
             study.optimize(lambda trial: main(args, trial), n_trials=args.tune_n_trials)

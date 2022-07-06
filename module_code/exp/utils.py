@@ -8,12 +8,6 @@ GRID_HP_MAP = {
         "C": [0.1, 1, 10, 100, 1000],
         "n_jobs": [-1],
     },
-    "svm": {
-        "C": [0.1, 1, 10, 100, 1000],
-        "kernel": ["rbf", "poly", "sigmoid", "linear"],
-        "degree": [1, 2, 3, 4, 5, 6],
-        "gamma": [1, 0.1, 0.01, 0.001, 0.0001],
-    },
     "knn": {
         "weights": ["uniform", "distance"],
         "leaf_size": [20, 25, 30, 35, 40],
@@ -21,7 +15,6 @@ GRID_HP_MAP = {
         "metric": ["minkowski", "chebyshev"],
         "n_jobs": [-1],
     },
-    "nb": {"alpha": [0.1, 1, 10, 100, 1000]},
     "dt": {
         "criterion": ["gini", "entropy"],
         "max_depth": [10, 30, 100],
@@ -89,9 +82,7 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials):
         params = {
             "pre_start_delta": time_delta_str_to_dict(
                 trials.suggest_categorical(
-                    # "pre_start_delta", ["3m", "1m", "14d", "7d", "5d", "3d", "1d"]
-                    "pre_start_delta",
-                    ["1d"],
+                    "pre_start_delta", ["3m", "1m", "14d", "7d", "5d", "3d", "1d"]
                 )
             ),
             # "modeln": modeln,
