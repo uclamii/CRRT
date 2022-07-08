@@ -45,7 +45,7 @@ ALG_MAP = {
     # "knn": KNeighborsClassifier,
     # "dt": DecisionTreeClassifier,
     "rf": RandomForestClassifier,
-    # "lgb": LGBMClassifier,
+    "lgb": LGBMClassifier,
     "xgb": XGBClassifier,
 }
 

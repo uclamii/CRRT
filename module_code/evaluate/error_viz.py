@@ -1,4 +1,5 @@
 from logging import warn
+from typing import List
 from mlflow import log_artifact, log_figure
 from matplotlib import pyplot as plt
 from mealy import ErrorAnalyzer, ErrorVisualizer
@@ -12,7 +13,8 @@ def error_visualization(
     labels: ndarray,
     prefix: str,
     model: ClassifierMixin,
-    columns: str,
+    columns: List[str],
+    categorical_columns: List[str],
     seed: int,
 ):
     if len(data) < 100:

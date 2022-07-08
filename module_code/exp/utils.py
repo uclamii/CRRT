@@ -22,6 +22,15 @@ GRID_HP_MAP = {
         "min_samples_leaf": [1, 2],
         "min_samples_split": [2, 5],
     },
+    "rf": {
+        "criterion": ["gini", "entropy"],
+        "max_depth": [10, 30, 100],
+        "max_features": ["auto", "sqrt"],
+        "min_samples_leaf": [1, 2],
+        "min_samples_split": [2, 5],
+        "bootstrap": [True, False],
+        "n_estimators": list(range(10, 100, 10)) + list(range(100, 1050, 100)),
+    },
     "lgb": {
         "num_leaves": [20, 40, 60, 80, 100],
         "min_child_samples": [5, 10, 15],
@@ -45,18 +54,6 @@ GRID_HP_MAP = {
     },
 }
 
-# random forest hp is just decision tree with some more options.
-GRID_HP_MAP["rf"] = (
-    GRID_HP_MAP["dt"]
-    .copy()
-    .update(
-        {
-            "bootstrap": [True, False],
-            "n_estimators": list(range(10, 100, 10)) + list(range(100, 1050, 100)),
-        }
-    )
-)
-
 
 def time_delta_str_to_dict(delta_str: Optional[str]) -> Optional[Dict[str, int]]:
     """
@@ -76,7 +73,7 @@ def time_delta_str_to_dict(delta_str: Optional[str]) -> Optional[Dict[str, int]]
 def get_optuna_grid(modeln: str, experiment_name: str, trials):
     if experiment_name == "static_learning":
         feature_selection_method = trials.suggest_categorical(
-            "feature_selection", ["top-k", "corr_thresh"]
+            "feature_selection", ["kbest", "corr_thresh"]
         )
 
         params = {
@@ -88,16 +85,16 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials):
             # "modeln": modeln,
             # Since GRID_HP_MAP is just list of choices we'll use suggest_categorical
             "model_kwargs": {
-                k: trials.suggest_categorical(k, v)
+                k: trials.suggest_categorical(f"{modeln}_{k}", v)
                 # If we dont have it in the grid just use default kwargs (by setting {})
                 for k, v in GRID_HP_MAP.get(modeln, {}).items()
             },
         }
 
-        if feature_selection_method == "top-k":
-            params["top_k_feature_importance"] = trials.suggest_int(
-                "top_k_feature_importance", 3, 18, step=5
-            )
+        # we run trials back to back so set a value for one and clear the other out
+        if feature_selection_method == "kbest":
+            params["kbest"] = trials.suggest_int("kbest", 3, 18, step=5)
+            params["corr_thresh"] = None
         else:
             params["corr_thresh"] = trials.suggest_float(
                 # "corr_thresh", 0.1, 0.9, step=0.1
@@ -106,5 +103,6 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials):
                 0.09,
                 step=0.005,
             )
+            params["kbest"] = None
 
         return params

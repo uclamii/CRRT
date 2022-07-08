@@ -56,7 +56,8 @@ def main(args: Namespace, trials=None):
     else:
         results_dict = experiment_function(preprocessed_df, *experiment_args)
     # So Optuna can compare and pick best trial
-    return results_dict[f"{args.modeln}_val__{args.tune_metric}"]
+    eval_split = "test" if args.stage == "eval" else "val"
+    return results_dict[f"{args.modeln}_{eval_split}__{args.tune_metric}"]
 
 
 def get_mlflow_model_uri(best_run: Run) -> str:
@@ -90,9 +91,25 @@ def evaluate_post_tuning(args: Namespace, study: Study):
     best_model_path = get_mlflow_model_uri(best_run)
     dargs = vars(args)
     # It's fine to add to args since this is the last run and it won't sully the previous trials (or "coming" runs)
+    modeln = best_run.data.tags["modeln"]
+    # split the best params into the ones that should be in model_kwargs and not
+    top_level_params = {}
+    model_kwargs = {}
+    for param_name, param_val in best_trial.params.items():
+        if param_name.startswith(modeln):
+            # exclude the rf_ if modeln is rf
+            raw_name = param_name[len(f"{args.modeln}") :]
+            model_kwargs[raw_name] = param_val
+        else:
+            top_level_params[param_name] = param_val
+
     dargs.update(
         {
-            **best_trial.params,
+            **top_level_params,
+            # modeln is selected outside of optuna so it wont be in params
+            "modeln": modeln,
+            # model_kwargs in best_trial.params but flattened out
+            "model_kwargs": model_kwargs,
             "best_run_id": best_run.info.run_id,
             "best_model_path": best_model_path,
             "stage": "eval",
@@ -114,6 +131,7 @@ if __name__ == "__main__":
             sampler=TPESampler(seed=args.seed),
         )
         for modeln in ALG_MAP.keys():
+            # for modeln in ["lgr"]:
             args.modeln = modeln
             # Ref: https://optuna.readthedocs.io/en/stable/faq.html#how-to-define-objective-functions-that-have-own-arguments
             study.optimize(lambda trial: main(args, trial), n_trials=args.tune_n_trials)

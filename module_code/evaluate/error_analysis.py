@@ -52,7 +52,8 @@ def model_randomness(
     labels: ndarray,
     prefix: str,
     model: ClassifierMixin,
-    columns: str,
+    columns: List[str],
+    categorical_columns: List[str],
     seed: int,
 ):
     """Tests for model randomness by comparing
