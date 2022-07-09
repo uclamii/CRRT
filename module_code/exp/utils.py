@@ -79,7 +79,7 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials):
         params = {
             "pre_start_delta": time_delta_str_to_dict(
                 trials.suggest_categorical(
-                    "pre_start_delta", ["3m", "1m", "14d", "7d", "5d", "3d", "1d"]
+                    "pre_start_delta", ["7d", "6d", "5d", "4d", "3d", "2d", "1d"]
                 )
             ),
             # "modeln": modeln,
