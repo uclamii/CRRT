@@ -7,6 +7,7 @@ GRID_HP_MAP = {
         "penalty": ["l2", "elasticnet"],
         "C": [0.1, 1, 10, 100, 1000],
         "n_jobs": [-1],
+        "solver": ["saga"],  # works for elasticnet and l2, and good for large datasets
     },
     "knn": {
         "weights": ["uniform", "distance"],
