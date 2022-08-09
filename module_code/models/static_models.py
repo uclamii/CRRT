@@ -1,5 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable, Dict, List, Union
+from os.path import join
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
@@ -326,7 +327,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                     )
                     .plot()
                     .figure_,
-                    f"{prefix}_{curve_name}.png",
+                    join("img_artifacts", "curves", f"{prefix}_{curve_name}.png"),
                 )
 
         # Error analysis

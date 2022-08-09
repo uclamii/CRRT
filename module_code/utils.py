@@ -59,6 +59,12 @@ def add_global_args(
         choices=["train", "tune", "eval"],
         help="Distinguish a run where each run is a separate stage (intead of all in one). e.g., running training separate from evaluation.",
     )
+    p.add_argument(
+        "--best-model-path",
+        type=str,
+        default=None,
+        help="Path to the model if stage == 'eval'.",
+    )
 
     # Params for generating preprocessed df file
     time_p = p.add_argument_group("Time Interval and Windowing")

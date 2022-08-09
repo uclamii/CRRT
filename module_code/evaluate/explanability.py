@@ -1,5 +1,5 @@
 from typing import List
-from numpy import ndarray, argwhere, apply_along_axis
+from numpy import ndarray
 from os.path import join
 from sklearn.base import ClassifierMixin
 from mlflow import log_figure
@@ -28,12 +28,18 @@ def lime_explainability(
         random_state=seed,
     )
     preds = model.predict(data)
-    for sample_type in ["tp", "tn"]:
+    for sample_type in ["tp", "tn", "fp", "fn"]:
         sample = data[filter_fns[sample_type](preds, labels)]
         if len(sample) > 0:
             # explain 1 (just randomly pick the first) sample from tp and tn
             exp = explainer.explain_instance(sample[0], model.predict_proba)
+            figure = exp.as_pyplot_figure()
+            figure.set_tight_layout(True)
             log_figure(
-                exp.as_pyplot_figure(),
-                join("img_artifacts", f"{prefix}_{sample_type}_explanation.png"),
+                figure,
+                join(
+                    "img_artifacts",
+                    "explanation",
+                    f"{prefix}_{sample_type}_explanation.png",
+                ),
             )

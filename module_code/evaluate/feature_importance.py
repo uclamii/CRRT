@@ -1,6 +1,7 @@
 from typing import List
 from numpy import ndarray
 from pandas import Series
+from os.path import join
 
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
@@ -44,5 +45,8 @@ def log_feature_importances(
     plt.figure()
     Series(importance, index=columns).nlargest(top_k).plot(kind="barh")
     plt.tight_layout()
-    log_figure(plt.gcf(), f"{prefix}_feature_importance.png")
+    log_figure(
+        plt.gcf(),
+        join("img_artifacts", "feature_importance", f"{prefix}_feature_importance.png"),
+    )
     plt.close()

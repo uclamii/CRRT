@@ -44,7 +44,9 @@ def error_visualization(
         error_viz.plot_feature_distributions_on_leaves(
             leaf_selector=leaf_id, top_k_features=5
         )
-        log_figure(plt.gcf(), f"{prefix}_leave_dists.png")
+        log_figure(
+            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists.png")
+        )
     except RuntimeError:
         # all predictions are correct no error analysis, skip
         pass
