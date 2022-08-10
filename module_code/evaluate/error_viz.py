@@ -37,7 +37,8 @@ def error_visualization(
         tree_src = error_viz.plot_error_tree()
         tree_src.format = "png"
         tree_src.render(join("img_artifacts", f"{prefix}_tree"))
-        log_artifact(join("img_artifacts", f"{prefix}_tree.png"))
+        path = join("img_artifacts", f"{prefix}_tree.png")
+        log_artifact(path, path)
 
         leaf_id = error_analyzer._get_ranked_leaf_ids()[0]
         # TODO: tie this to feature importance top-k-features? (use same k)

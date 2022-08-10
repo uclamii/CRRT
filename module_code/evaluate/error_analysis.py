@@ -76,7 +76,6 @@ def model_randomness(
         comparison_name = f"{comparison[0]}_vs_{comparison[1]}"
         table[comparison_name] = {}
         for colidx, coln in enumerate(columns):
-            table[comparison_name][coln] = {}
             # e.g. fn_vs_tp -> SBP (all rows)
             dist_error = subsets[error_type][:, colidx]
             dist_true = subsets[true_type][:, colidx]
@@ -86,17 +85,17 @@ def model_randomness(
                     # check normal (test rquires at least 3 data points)
                     if test_normality(dist_error):
                         # Ref: https://www.statology.org/two-sample-t-test-python/
-                        table[comparison_name][coln]["test_used"] = "t_ind"
-                        table[comparison_name][coln][
-                            "test_result"
+                        table[comparison_name][(coln, "test_used")] = "t_ind"
+                        table[comparison_name][
+                            (coln, "test_result")
                         ] = test_fail_to_reject(
                             st.ttest_ind(dist_error, dist_true, random_state=seed)[1]
                         )
                     else:  # not normal
                         # Ref: https://www.statology.org/mann-whitney-u-test-python/
-                        table[comparison_name][coln]["test_used"] = "mannwhitney_u"
-                        table[comparison_name][coln][
-                            "test_result"
+                        table[comparison_name][(coln, "test_used")] = "mannwhitney_u"
+                        table[comparison_name][
+                            (coln, "test_result")
                         ] = test_fail_to_reject(
                             st.mannwhitneyu(dist_error, dist_true)[1]
                         )
@@ -117,18 +116,18 @@ def model_randomness(
                         contingency.shape[0] == 2 and contingency.shape[1] == 2
                     ):  # expect 2x2
                         # Ref: https://www.statology.org/fishers-exact-test-python/
-                        table[comparison_name][coln]["test_used"] = "fisher_exact"
-                        table[comparison_name][coln][
-                            "test_result"
+                        table[comparison_name][(coln, "test_used")] = "fisher_exact"
+                        table[comparison_name][
+                            (coln, "test_result")
                         ] = test_fail_to_reject(st.fisher_exact(contingency)[1])
                     else:
                         # although technically frequencies/counts must be > 5 there's no other python alternatives for multicategorical
-                        table[comparison_name][coln]["test_used"] = "chi2"
-                        table[comparison_name][coln][
-                            "test_result"
+                        table[comparison_name][(coln, "test_used")] = "chi2"
+                        table[comparison_name][
+                            (coln, "test_result")
                         ] = test_fail_to_reject(st.chi2_contingency(contingency)[1])
             else:  # cannot do the test
-                table[comparison_name][coln]["test_used"] = "N/A"
-                table[comparison_name][coln]["test_result"] = "N/A"
-    # TODO: the df is saving the dictionary of {test_used: ...,  tesT_result: ...} into each cell instead of multiindex.
-    log_text(DataFrame(table).to_string(), f"{prefix}_dist_comparison_table.txt")
+                table[comparison_name][(coln, "test_used")] = "N/A"
+                table[comparison_name][(coln, "test_result")] = "N/A"
+    # To read: read_csv("tmp.txt", index_col=[0,1])
+    log_text(DataFrame(table).to_csv(), f"{prefix}_dist_comparison_table.csv")
