@@ -9,6 +9,8 @@ import math
 
 from sklearn.feature_selection import f_classif
 from sklearn.utils.validation import check_is_fitted
+from sklearn.base import BaseEstimator
+from sklearn.feature_selection._base import SelectorMixin
 from sklearn.feature_selection._univariate_selection import _BaseFilter, _clean_nans
 
 # Local
@@ -93,6 +95,20 @@ def f_pearsonr(X: pd.DataFrame, labels: pd.Series) -> Tuple[np.ndarray, np.ndarr
         scores = np.nan_to_num(scores, nan=0)
 
     return (scores, pvalues)
+
+
+class Preselected(SelectorMixin, BaseEstimator):
+    """Select features according preset mask."""
+
+    # Do nothing score func
+    def __init__(self, support_mask: List[bool]):
+        self.support_mask = support_mask
+
+    def fit(self, X, y):
+        return self
+
+    def _get_support_mask(self):
+        return self.support_mask
 
 
 class SelectThreshold(_BaseFilter):

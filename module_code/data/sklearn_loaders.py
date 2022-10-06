@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
-from typing import Callable, Dict, Optional, Tuple, Union
+from lib2to3.pgen2.token import OP
+from typing import Callable, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 
@@ -15,7 +16,7 @@ from sklearn.feature_selection import SelectKBest
 # Local
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
 from data.base_loaders import AbstractCRRTDataModule, DataLabelTuple
-from data.utils import SelectThreshold, f_pearsonr
+from data.utils import Preselected, SelectThreshold, f_pearsonr
 
 ADDITIONAL_CATEGORICAL_COLS = [
     "Surgery in Past Week",
@@ -51,7 +52,14 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.corr_thresh = corr_thresh
         self.filters = filters
 
-    def setup(self, stage: Optional[str] = None):
+    def setup(
+        self,
+        stage: Optional[str] = None,
+        reference_ids: Optional[Dict[str, pd.Index]] = None,
+        reference_cols_mask: Optional[
+            List[bool]
+        ] = None,  # as a mask for feature selection
+    ):
         """
         Ops performed across GPUs. e.g. splits, transforms, etc.
         """
@@ -70,7 +78,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
 
         self.nfeatures = X.shape[1]
 
-        train_tuple, val_tuple, test_tuple = self.split_dataset(X, y)
+        train_tuple, val_tuple, test_tuple = self.split_dataset(X, y, reference_ids)
 
         # Apply filters for subpopulation analysis later
         # MUST OCCUR BEFORE TRANSFORM (before feature selection)
@@ -81,7 +89,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             self.test_filters = {k: v(test_tuple[0]) for k, v in self.filters.items()}
 
         # fit pipeline on train, call transform in get_item of dataset
-        self.data_transform = self.get_post_split_transform(train_tuple)
+        self.data_transform = self.get_post_split_transform(
+            train_tuple, reference_cols_mask
+        )
 
         # set self.train, self.val, self.test
         # self.train = CRRTDataset(train_tuple, self.data_transform)
@@ -91,7 +101,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.val = (self.data_transform(val_tuple[0]), val_tuple[1])
         self.test = (self.data_transform(test_tuple[0]), test_tuple[1])
 
-    def get_post_split_transform(self, train: DataLabelTuple) -> Callable:
+    def get_post_split_transform(
+        self, train: DataLabelTuple, reference_cols_mask: Optional[List[bool]] = None
+    ) -> Callable:
         """
         The serialized preprocessed df should alreayd have dealth with categorical variables and aggregated them as counts, so we only deal with numeric / continuous variables.
         """
@@ -114,8 +126,8 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 ),
                 # zero out everything else
                 ("simple-impute", SimpleImputer(strategy="constant", fill_value=0)),
-                # feature-selection doesn't allow NaNs in the data, impute first.
-                ("feature-selection", self.get_feature_selection()),
+                # feature-selection doesn't allow NaNs in the data, make sure to impute first.
+                ("feature-selection", self.get_feature_selection(reference_cols_mask)),
             ]
         )
 
@@ -129,13 +141,16 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
 
         return pipeline.transform
 
-    def get_feature_selection(self) -> Callable:
+    def get_feature_selection(
+        self, reference_cols_mask: Optional[List[bool]] = None
+    ) -> Callable:
         """
         Fit the feature selection transform based on either the k best features or the number of features
         above a correlation threshold. Passthrough option also available.
         """
-
         # TODO: Test these work as intended
+        if reference_cols_mask is not None:
+            return Preselected(support_mask=reference_cols_mask)
         if self.kbest and self.corr_thresh:
             raise ValueError("Both kbest and corr_thresh are not None")
         if self.kbest:
@@ -150,6 +165,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self,
         X: pd.DataFrame,
         y: Union[pd.Series, np.ndarray],
+        reference_ids: Optional[Dict[str, pd.Index]] = None,
     ) -> Tuple[DataLabelTuple, DataLabelTuple, DataLabelTuple]:
         """
         Splitting with stratification using sklearn.
@@ -160,19 +176,32 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # ensure data is split by patient
         sample_ids = X.index.droplevel(["Start Date"]).unique().values
         labels = y.groupby("IP_PATIENT_ID").first()
-        # patient_ids = X.index.unique("IP_PATIENT_ID").values
-        train_val_ids, test_ids = train_test_split(
-            sample_ids,
-            test_size=self.test_split_size,
-            stratify=labels,
-            random_state=self.seed,
-        )
-        train_ids, val_ids = train_test_split(
-            train_val_ids,
-            test_size=self.val_split_size,
-            stratify=labels[train_val_ids],
-            random_state=self.seed,
-        )
+
+        if reference_ids is not None:  # filter id to the serialized ones
+            # There are patients we don't want include:
+            # there may be fewer patients in this dataset (D_{+i}) than original because they don't have enough data after the sliding window
+            # or there may be extraneous ones that wouldn't have enough data for the window without a slide, but now do, that we don't want to include
+            # Solve this by inner joining
+            train_ids = reference_ids["train"].join(sample_ids, how="inner")
+            val_ids = reference_ids["val"].join(sample_ids, how="inner")
+            test_ids = reference_ids["test"].join(sample_ids, how="inner")
+        else:
+            # patient_ids = X.index.unique("IP_PATIENT_ID").values
+            train_val_ids, test_ids = train_test_split(
+                sample_ids,
+                test_size=self.test_split_size,
+                stratify=labels,
+                random_state=self.seed,
+            )
+            train_ids, val_ids = train_test_split(
+                train_val_ids,
+                test_size=self.val_split_size,
+                stratify=labels[train_val_ids],
+                random_state=self.seed,
+            )
+
+            # In order to serialize splits for rolling window analysis
+            self.split_pt_ids = {"train": train_ids, "val": val_ids, "test": test_ids}
 
         # return (X,y) pair, where X is a List of pd dataframes for each pt
         # this is so the dimensions match when we zip them into a pytorch dataset

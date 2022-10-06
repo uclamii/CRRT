@@ -1,6 +1,7 @@
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable, Dict, List, Union
-from os.path import join
+from os.path import join, dirname
+from os import makedirs
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
@@ -12,6 +13,9 @@ from sklearn.ensemble import RandomForestClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from pandas import Index
+
+from pytorch_lightning.core.mixins import HyperparametersMixin
+from pytorch_lightning.core.saving import save_hparams_to_yaml, load_hparams_from_yaml
 
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
@@ -40,6 +44,9 @@ from evaluate.error_viz import error_visualization
 from evaluate.error_analysis import model_randomness
 from evaluate.explanability import lime_explainability
 from evaluate.feature_importance import log_feature_importances
+
+STATIC_MODEL_FNAME = "static_model.pkl"
+STATIC_HPARAM_FNAME = "static_hparams.yml"
 
 ALG_MAP = {
     "lgr": LogisticRegression,
@@ -105,42 +112,44 @@ error_analysis_map = {
 }
 
 
-class StaticModel(AbstractModel):
+class StaticModel(AbstractModel, HyperparametersMixin):
     def __init__(
         self,
         seed: int,
         modeln: str,
-        metrics: List[str],
-        curves: List[str],
+        metric_names: List[str],
+        curve_names: List[str],
         error_analysis: List[str],
         top_k_feature_importance: int,
         model_kwargs: Dict[str, Any],
     ):
         super().__init__()
-        self.seed = seed
-        self.modeln = modeln
-        self.model_kwargs = model_kwargs
-        if self.modeln not in {"knn", "nb"}:
-            self.model_kwargs["random_state"] = seed
-        if self.modeln == "xgb" and has_gpu():
-            self.model_kwargs["use_label_encoder"] = False  # get rid of warning
-            self.model_kwargs["eval_metric"] = "logloss"  # get rid of warning
+        self.save_hyperparameters()
+        if self.hparams["modeln"] not in {"knn", "nb"}:
+            self.hparams["model_kwargs"]["random_state"] = seed
+        if self.hparams["modeln"] == "xgb" and has_gpu():
+            # Get rid of warnings
+            self.hparams["model_kwargs"]["use_label_encoder"] = False
+            self.hparams["model_kwargs"]["eval_metric"] = "logloss"
             # self.model_kwargs["tree_method"] = "gpu_hist"  # installing py-xgboost-gpu is not working
-            pass
+        self.setup()
+
+    def setup(self):
         self.model = self.build_model()
-        self.metrics = self.configure_metrics(metrics)
-        self.metric_names = metrics
-        self.curves = self.configure_curves(curves)
-        self.curve_names = curves
-        self.error_analysis = error_analysis
-        self.top_k_feature_importance = top_k_feature_importance
+        self.metrics = self.configure_metrics(self.hparams["metric_names"])
+        self.curves = self.configure_curves(self.hparams["curve_names"])
+        self.error_analysis = self.configure_error_analysis(
+            self.hparams["error_analysis"]
+        )
 
     def build_model(self):
-        if self.modeln in ALG_MAP:
-            model_cls = ALG_MAP[self.modeln]
+        if self.hparams["modeln"] in ALG_MAP:
+            model_cls = ALG_MAP[self.hparams["modeln"]]
         else:
-            raise ValueError("The {} is not a valid model type".format(self.modeln))
-        return model_cls(**self.model_kwargs)
+            raise ValueError(
+                "The {} is not a valid model type".format(self.hparams["modeln"])
+            )
+        return model_cls(**self.hparams["model_kwargs"])
 
     def configure_metrics(self, metric_names: List[str]) -> List[Callable]:
         """Pick metrics."""
@@ -157,6 +166,73 @@ class StaticModel(AbstractModel):
                 curve in curve_map
             ), f"{curve} is not valid plot name. Must match a key in `plot_map`"
         return [curve_map[curve] for curve in curve_names]
+
+    def configure_error_analysis(self, error_analysis: List[str]) -> List[Callable]:
+        if error_analysis is None:
+            return None
+        return [error_analysis_map[analysis_name] for analysis_name in error_analysis]
+
+    def log_model(self):
+        """Log to MLFlow."""
+        # Log hparams
+        hparams_file = join("static_model", STATIC_HPARAM_FNAME)
+        mlflow.log_dict(self.hparams, hparams_file)
+
+        # Log model
+        # Select which logging function from mlflow
+        if self.hparams["modeln"] == "xgb":
+            log_fn = mlflow.xgboost.log_model
+        elif self.hparams["modeln"] == "lgb":
+            log_fn = mlflow.lightgbm.log_model
+        else:
+            log_fn = mlflow.sklearn.log_model
+        # Log to MlFlow
+        log_fn(self.model, join("static_model", STATIC_MODEL_FNAME))
+
+    def save_model(self, serialized_static_model_dir: str):
+        """Vs logging with mlflow, saves to selected path"""
+        # Save hparams
+        hparams_file = join(serialized_static_model_dir, STATIC_HPARAM_FNAME)
+        # make if does not exist, otherwise overwrite
+        makedirs(dirname(hparams_file), exist_ok=True)
+        save_hparams_to_yaml(hparams_file, self.hparams)
+
+        # Save model
+        if self.hparams["modeln"] == "xgb":
+            save_fn = self.model.save_model
+        else:
+            save_fn = lambda path: mlflow.sklearn._save_model(
+                self.model, path, "pickle"
+            )
+        save_fn(join(serialized_static_model_dir, STATIC_MODEL_FNAME))
+
+    def load_model(self, serialized_static_model_dir: str) -> None:
+        """Loads model regardless if saved locally or in mlflow."""
+        # Load Hparams (hparams is a property not an attribute so I cannot assign it directly)
+        self._set_hparams(
+            load_hparams_from_yaml(
+                join(serialized_static_model_dir, STATIC_HPARAM_FNAME)
+            )
+        )
+
+        # Load Model
+        model_path = join(serialized_static_model_dir, STATIC_MODEL_FNAME)
+        try:
+            if self.hparams["modeln"] == "xgb":
+                load_fn = mlflow.xgboost.load_model
+            elif self.hparams["modeln"] == "lgb":
+                load_fn = mlflow.lightgbm.load_model
+            else:
+                load_fn = mlflow.sklearn.load_model
+            self.model = load_fn(model_path)
+        except mlflow.exceptions.MlflowException:  # not mlflow logged
+            if self.hparams["modeln"] == "xgb":
+                self.model = XGBClassifier()
+                self.model.load_model(model_path)
+            else:
+                self.model = mlflow.sklearn._load_model_from_local_file(
+                    model_path, "pickle"
+                )
 
     @staticmethod
     def add_model_args(p: ArgumentParser) -> ArgumentParser:
@@ -177,14 +253,14 @@ class StaticModel(AbstractModel):
         )
         p.add_argument(
             "--static-metrics",
-            dest="metrics",
+            dest="metric_names",
             type=str,
             action=YAMLStringListToList(str, choices=list(METRIC_MAP.keys())),
             help="(List of comma-separated strings) Name of metrics from sklearn.",
         )
         p.add_argument(
             "--static-curves",
-            dest="curves",
+            dest="curve_names",
             type=str,
             action=YAMLStringListToList(str, choices=list(curve_map.keys())),
             help="(List of comma-separated strings) Name of curves/plots from sklearn.",
@@ -223,24 +299,13 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         return super().from_argparse_args(StaticModel, args, **kwargs)
 
     def log_model(self):
-        if self.static_model.modeln == "xgb":
-            mlflow.xgboost.log_model(self.static_model.model, "static_model.pkl")
-        elif self.static_model.modeln == "lgb":
-            mlflow.lightgbm.log_model(self.static_model.model, "static_model.pkl")
-        else:
-            mlflow.sklearn.log_model(self.static_model.model, "static_model.pkl")
+        self.static_model.log_model()
 
     def load_model(self, serialized_static_model_path: str) -> None:
-        loaded_model = None
-        if self.static_model.modeln == "xgb":
-            loaded_model = mlflow.xgboost.load_model(serialized_static_model_path)
-        elif self.static_model.modeln == "lgb":
-            loaded_model = mlflow.lightgbm.load_model(serialized_static_model_path)
-        else:
-            loaded_model = mlflow.sklearn.load_model(serialized_static_model_path)
-        self.static_model.model = loaded_model
-        # with open(serialized_static_model_path, "rb") as model_path:
-        # self.static_model.model = load(model_path)
+        self.static_model.load_model(serialized_static_model_path)
+
+    def save_model(self, serialized_static_model_path: str) -> None:
+        self.static_model.save_model(serialized_static_model_path)
 
     def fit(self, data: SklearnCRRTDataModule):
         seed_everything(self.seed)
@@ -269,14 +334,17 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         The filters can be either the bool series filter itself, or a function that produces one given the df.
         """
         X, y = getattr(data, stage)
-        columns = data.columns[data.selected_columns_mask]
+        if hasattr(data, "selected_columns_mask"):
+            columns = data.columns[data.selected_columns_mask]
+        else:
+            columns = data.columns
         categorical_columns = data.categorical_columns.intersection(columns)
         X = pd.DataFrame(X, columns=columns)
         ## Evaluate on split of dataset (train, val, test) ##
         metrics = self.eval_and_log(
             X,
             y,
-            prefix=f"{self.static_model.modeln}_{stage}_",
+            prefix=f"{self.static_model.hparams['modeln']}_{stage}_",
             categorical_columns=categorical_columns,
         )
 
@@ -288,7 +356,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.eval_and_log(
                     X[filter.values],
                     y[filter.values],
-                    prefix=f"{self.static_model.modeln}_{stage}_{filter_n}_",
+                    prefix=f"{self.static_model.hparams['modeln']}_{stage}_{filter_n}_",
                     categorical_columns=categorical_columns,
                 )
 
@@ -305,21 +373,23 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         """Logs metrics and curves/plots."""
         metrics = None
         # Metrics
-        if self.static_model.metric_names is not None:
+        if self.static_model.hparams["metric_names"] is not None:
             metrics = {
                 f"{prefix}_{metric_name}": metric_fn(
                     labels, self.predict_proba(data.values)[:, 1], decision_threshold
                 )
                 for metric_name, metric_fn in zip(
-                    self.static_model.metric_names, self.static_model.metrics
+                    self.static_model.hparams["metric_names"],
+                    self.static_model.metrics,
                 )
             }
             mlflow.log_metrics(metrics)
 
         # Curves/Plots
-        if self.static_model.curve_names is not None:
+        if self.static_model.hparams["curve_names"] is not None:
             for curve_name, curve in zip(
-                self.static_model.curve_names, self.static_model.curves
+                self.static_model.hparams["curve_names"],
+                self.static_model.curves,
             ):
                 mlflow.log_figure(
                     curve.from_predictions(
@@ -331,9 +401,9 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 )
 
         # Error analysis
-        if self.static_model.error_analysis is not None:
-            for analysis_name in self.static_model.error_analysis:
-                error_analysis_map[analysis_name](
+        if self.static_model.hparams["error_analysis"] is not None:
+            for analysis_fn in self.static_model.error_analysis:
+                analysis_fn(
                     data.values,
                     labels,
                     prefix,
@@ -345,9 +415,9 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
         # Feature importance
         # Ref: https://machinelearningmastery.com/calculate-feature-importance-with-python/
-        if self.static_model.top_k_feature_importance is not None:
+        if self.static_model.hparams["top_k_feature_importance"] is not None:
             log_feature_importances(
-                self.static_model.top_k_feature_importance,
+                self.static_model.hparams["top_k_feature_importance"],
                 data.values,
                 labels,
                 prefix,

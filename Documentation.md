@@ -1,6 +1,7 @@
 # Project Documentation
 
 Everything can be triggered from `main.py` and can be adjusted in `options.yml`. 
+If you want to do a rolling window analysis, execute `python scripts/rolling_window_analysis.py`.
 Hyperparameter tuning is via optuna, the grid desired can be found in `module_code/exp/utils.py`.
 Experiment tracking is via mlflow, optuna trials are numbered starting from 0.
 
@@ -53,6 +54,8 @@ Handle loading data / preprocess.
             |--- tests |
             |--- main.py
             Runs everything: loads the data and runs the predictive task with cv.  Produces a log file.
+            |--- rolling_window_analysis.sh
+            Runs the pipeline but with sliding the windows down.
             |--- utils.py
             CLI arg utils to help run the script and incorporate any options/YAML files/etc.
 notebooks   |

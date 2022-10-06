@@ -95,6 +95,12 @@ def add_global_args(
         choices=["Start Date", "End Date"],
         help="Specifying if to preprocess data only until the start date of CRRT, or to go all the way through the end date of CRRT, will be used if no post-start-delta passed.",
     )
+    time_p.add_argument(
+        "--slide_window",
+        type=int,
+        default=None,
+        help="If doing a rolling window analysis, this is the integer number of days to slide the time window mask forward. None means no sliding. 0 means none now but the following runs will be.",
+    )
 
     # Logging / Tracking
     logging_p = p.add_argument_group("Logging / Tracking")
@@ -152,27 +158,24 @@ def load_cli_args(args_options_path: str = "options.yml"):
     """
     Modify command line args if desired, or load from YAML file.
     """
-    if len(sys.argv) <= 3:
-        if isfile(args_options_path):  # if file exists
-            with open(args_options_path, "r") as f:
-                res = yaml.safe_load(f)
+    if isfile(args_options_path):  # if file exists
+        with open(args_options_path, "r") as f:
+            res = yaml.safe_load(f)
 
-            # set/override cli args below
-            """
-            res = {
-                "run-name": "placeholder",
-                # "experiment-tracking": True,  # any value works, comment line to toggle off
-            }
-            """
+        # set/override cli args below
+        """
+        res = { "run-name": "placeholder", }
+        """
 
-            sys.argv = [sys.argv[0]]
+        # sys.argv = [sys.argv[0]]
 
-            # add as a positional arg/command to control subparsers (instead of flag)
-            # don't remove so that experiment tracking automatically logs
-            if "model-type" in res:
-                sys.argv.append(res["model-type"])
+        # add as a positional arg/command to control subparsers (instead of flag)
+        # don't remove so that experiment tracking automatically logs
+        if "model-type" in res:
+            sys.argv.insert(1, res["model-type"])
 
-            for k, v in res.items():
+        for k, v in res.items():
+            if f"--{k}" not in sys.argv:
                 sys.argv += [f"--{k}", str(v)]
 
 
@@ -227,6 +230,7 @@ def get_preprocessed_file_name(
     post_start_delta: Optional[Dict[str, int]] = None,
     time_interval: Optional[str] = None,
     time_window_end: Optional[str] = None,
+    slide_window: Optional[int] = None,
     preprocessed_df_file: Optional[str] = None,
     serialization: str = "feather",
 ) -> str:
@@ -237,6 +241,7 @@ def get_preprocessed_file_name(
     df_{time interval the features are aggregated in}agg_[{time window start},{time window end}].extension
     If providing deltas: [startdate-pre_start_delta,startdate+post_start_delta]
     If providing neither [startdate,time_window_end].
+    If sliding the window (window > 0): [start + i - pre], (start+post | end) + i]
     """
     if preprocessed_df_file:
         return preprocessed_df_file + f".{serialization}"
@@ -245,14 +250,22 @@ def get_preprocessed_file_name(
         fname += f"_{time_interval}agg"
     # time window
     fname += "_[startdate"
+    if slide_window:
+        fname += f"+{slide_window}"
+
     if pre_start_delta:
         # subtracting the delta time
         fname += f"-{time_delta_to_str(pre_start_delta)}"
     fname += ","
     # end of window:
     if post_start_delta:
-        fname += f"startdate+{time_delta_to_str(post_start_delta)}]"
+        fname += f"startdate+{time_delta_to_str(post_start_delta)}"
     else:
-        fname += f"{time_window_end.replace(' ', '').lower()}]"
+        fname += f"{time_window_end.replace(' ', '').lower()}"
+    if slide_window:
+        fname += f"+{slide_window}"
+
+    # Close
+    fname += "]"
 
     return fname + "." + serialization

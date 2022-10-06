@@ -36,12 +36,21 @@ def get_time_window_mask(
     pre_start_delta: Optional[Dict[str, int]] = None,
     post_start_delta: Optional[Dict[str, int]] = None,
     mask_end: str = "End Date",
+    slide_window: int = 0,
 ) -> pd.DataFrame:
     """
     Assumes outcomes_df index is [pt, start date]
     Assumes Start Date, and End Date are already dtype = DateTime.
     Mask is [start date - pre_start_delta, min(end date, start date + post_start_delta)] if both are specified.
     If neither are specified, [start date, mask_end].
+
+    If slide_window is specified (positive) it will slide the window up by n days.
+    NOTE: Even if a patient doesn't have pre_start_delta days of data,
+    if after sliding their measurements are still in the new/slided range,
+    then they will be included.
+    E.g., pt has 1 day data before start, and 1 day after.
+        prestart=2, slide=0 => not included
+        prestart=2, slide=1 => included
     """
     # get df indexed by pt and then columns ["start", "end"]
     window_dates = outcomes_df["End Date"].reset_index(level="Start Date")
@@ -66,13 +75,22 @@ def get_time_window_mask(
             axis=1,
         ).min(axis=1)
     else:  # just use mask_end
-        mask_end_interval = window_dates[mask_end]
+        # if I modify mask_end_interval it will modify window_dates, so copy
+        mask_end_interval = window_dates[mask_end].copy()
+
+    if slide_window:  # Ignore null
+        # Slide the window (by default 0 days, so no sliding occurs)
+        mask_start_interval += timedelta(days=slide_window)
+        mask_end_interval += timedelta(days=slide_window)
 
     time_window = pd.concat(
         [window_dates["Start Date"], mask_start_interval, mask_end_interval],
         axis=1,
         keys=["Start Date", "Window Start", "Window End"],
     )
+
+    # filter to ensure all patients have X days of data needed to aggregate (static)
+    time_window = time_window[time_window["Window End"] <= window_dates["End Date"]]
 
     # starts: list of all corresponding start dates to the windows, window start = list of all starts, window end = list of all ends (same size) per patient
     return time_window.groupby("IP_PATIENT_ID").agg(tuple).applymap(list)

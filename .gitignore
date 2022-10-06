@@ -7,6 +7,7 @@ options.yml
 # ignore pytorch lightning outputs and mlflow outputs
 lightning_logs/
 mlruns/
+local_data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -237,12 +237,12 @@ class TestAggregateFeature(unittest.TestCase):
 
 
 class TestWindowMask(unittest.TestCase):
-    def setUp(self) -> None:
+    def setUp(self, ndays_on_crrt: List[int] = [1, 2, 2, 2]) -> None:
         super().setUp()
         self.start_dates = pd.to_datetime(
             ["2018-02-04", "2019-03-05", "2020-04-06", "2020-04-06"]  # yyyy-mm-dd
         )
-        self.ndays_on_crrt = [1, 2, 2, 2]
+        self.ndays_on_crrt = ndays_on_crrt
         self.end_dates = [
             start_date + timedelta(days=ndays)
             for start_date, ndays in zip(self.start_dates, self.ndays_on_crrt)
@@ -253,12 +253,11 @@ class TestWindowMask(unittest.TestCase):
         )
         self.outcomes_df.index.names = ["IP_PATIENT_ID", "Start Date"]
 
-    def _create_patient_df(self):
+    def _create_patient_df(self, deltas: List[Tuple[float, float]]):
         """
         All pts have data on start date.
         """
         # create daily patient delta within the window specified by delta. all pts have data on start date
-        deltas = [(2, 2), (0, 1 / 24), (1 / 24, 0), (0, 0)]
         agg_dates = []
         pt_ids = []
         start_dates = []
@@ -291,7 +290,8 @@ class TestWindowMask(unittest.TestCase):
         return df, start_dates
 
     def test_delta(self):
-        df, start_dates = self._create_patient_df()
+        ndays_per_pt = [(2, 2), (0, 1 / 24), (1 / 24, 0), (0, 0)]
+        df, start_dates = self._create_patient_df(ndays_per_pt)
 
         time_windows = [
             # will exclude features with a timestamp more than 1 day before start and on or after start
@@ -313,32 +313,92 @@ class TestWindowMask(unittest.TestCase):
             [0, 1, 5, 6, 7, 8, 9],
             [0, 5, 6, 7, 9],
         ]
-        self._test_multiple_windows(time_windows, df, start_dates, correct_df_rows)
+        slide_window = 0  # Ignore for simplicity
+        for (pre_start_delta, post_start_delta, mask_end), correct_rows in zip(
+            time_windows, correct_df_rows
+        ):
+            self._test_windows(
+                df,
+                start_dates,
+                pre_start_delta,
+                post_start_delta,
+                mask_end,
+                slide_window,
+                correct_rows,
+            )
 
-    def _test_multiple_windows(
+    def test_slide_window(self):
+        # e.g., patient[0] has 2 days of data before start, and 2 days after
+        ndays_per_pt = [(2, 2), (1, 1), (2, 1), (1, 2)]
+        df, start_dates = self._create_patient_df(ndays_per_pt)
+        self.setUp(ndays_on_crrt=[2, 1, 1, 2])
+
+        time_windows = [
+            ({"DAYS": 1}, None, "Start Date", None),  # Window size = 1, slide = None
+            ({"DAYS": 1}, None, "Start Date", 0),  # Window size = 1, slide = 0
+            ({"DAYS": 1}, None, "Start Date", 1),  # Window size = 1, slide = 1
+            ({"DAYS": 1}, None, "Start Date", 2),  # Window size = 1, slide = 2
+            ({"DAYS": 2}, None, "Start Date", 1),  # Window size = 2, slide = 1
+            ({"DAYS": 2}, None, "Start Date", 2),  # Window size = 2, slide = 2
+        ]
+        # test on time_windows x slide_windows, if w=1,s=1 then it should be 1 entry
+        # reference df for indices
+        correct_df_rows = [
+            # all should work, it will be the day before start date
+            [1, 6, 9, 13],
+            # outcome for 0 == None
+            [1, 6, 9, 13],
+            # all should work, it will be the start date data for all of them
+            [0, 5, 8, 12],
+            # pt with 2 days after(first and last). 1 day of data, startdate + 1
+            [3, 14],
+            # 2 days data, straddling start
+            [0, 1, 5, 6, 8, 9, 12, 13],
+            # 2 days data after start
+            [0, 3, 12, 14],
+        ]
+        for (
+            pre_start_delta,
+            post_start_delta,
+            mask_end,
+            slide_window,
+        ), correct_rows in zip(time_windows, correct_df_rows):
+            self._test_windows(
+                df,
+                start_dates,
+                pre_start_delta,
+                post_start_delta,
+                mask_end,
+                slide_window,
+                correct_rows,
+            )
+
+    def _test_windows(
         self,
-        time_windows: List[Tuple[Dict[str, int], Dict[str, int], str]],
         df: pd.DataFrame,
         start_dates: pd.Series,
-        correct_df_rows: List[List[int]],
+        pre_start_delta: Dict[str, int],
+        post_start_delta: Dict[str, int],
+        mask_end: str,
+        slide_window: int,
+        correct_rows: List[List[int]],
     ):
         """
         Takes time windows: [prestart, poststart, maskend], all of them are optional but one must exist.
         Compares against correct rows in df.
         Default mask_end is End Date.
         """
-        for (pre_start_delta, post_start_delta, mask_end), correct_rows in zip(
-            time_windows, correct_df_rows
-        ):
-            time_mask = get_time_window_mask(
-                self.outcomes_df,
-                pre_start_delta,
-                post_start_delta,
-                mask_end=mask_end if mask_end else "End Date",
-            )
-            masked_df = apply_time_window_mask(df, "TIME_COL", time_mask)
-            correct_df = df.copy(deep=True)
-            correct_df["Start Date"] = start_dates
-            correct_df = correct_df.iloc[correct_rows]
-            correct_df.reset_index(drop=True, inplace=True)
-            self.assertTrue(correct_df.equals(masked_df))
+        time_mask = get_time_window_mask(
+            self.outcomes_df,
+            pre_start_delta,
+            post_start_delta,
+            # mask_end=mask_end if mask_end else "End Date",
+            mask_end,
+            slide_window=slide_window,
+        )
+        masked_df = apply_time_window_mask(df, "TIME_COL", time_mask)
+        correct_df = df.copy(deep=True)
+        correct_df["Start Date"] = start_dates
+        correct_df = correct_df.iloc[correct_rows]
+        correct_df.reset_index(drop=True, inplace=True)
+        pd.testing.assert_frame_equal(correct_df, masked_df)

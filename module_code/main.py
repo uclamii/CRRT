@@ -12,11 +12,11 @@ from exp.cv import run_cv
 from exp.static_learning import static_learning
 from exp.ctn_learning import continuous_learning
 from exp.utils import get_optuna_grid, time_delta_str_to_dict
-from models.static_models import ALG_MAP
+from models.static_models import ALG_MAP, STATIC_MODEL_FNAME
 from utils import load_cli_args, init_cli_args
 
 
-def main(args: Namespace, trials=None):
+def run_experiment(args: Namespace, trials=None):
     # Ref: https://github.com/optuna/optuna/issues/862
     # trials will override any other updating of params from CLI or options.yml because it comes last after load/init args.
     if trials is not None:
@@ -55,13 +55,18 @@ def main(args: Namespace, trials=None):
             results_dict = experiment_function(preprocessed_df, *experiment_args)
     else:
         results_dict = experiment_function(preprocessed_df, *experiment_args)
-    # So Optuna can compare and pick best trial
-    eval_split = "test" if args.stage == "eval" else "val"
-    return results_dict[f"{args.modeln}_{eval_split}__{args.tune_metric}"]
+    if args.tune_n_trials:  # So Optuna can compare and pick best trial
+        eval_split = "test" if args.stage == "eval" else "val"
+        return results_dict[f"{args.modeln}_{eval_split}__{args.tune_metric}"]
+    return results_dict
 
 
 def get_mlflow_model_uri(best_run: Run) -> str:
-    return best_run.info.artifact_uri[len("file://") :] + f"/static_model.pkl"
+    return join(
+        # best_run.info.artifact_uri[len("file://") :], "static_model", STATIC_MODEL_FNAME
+        best_run.info.artifact_uri[len("file://") :],
+        "static_model",
+    )
 
 
 def get_best_trial_mlflow_run(
@@ -116,13 +121,10 @@ def evaluate_post_tuning(args: Namespace, study: Study):
         }
     )
     # Run
-    main(args)
+    run_experiment(args)
 
 
-if __name__ == "__main__":
-    load_cli_args()
-    args = init_cli_args()
-
+def main(args):
     # Optionally run tuning, then evaluate
     if args.tune_n_trials:
         study = create_study(
@@ -134,9 +136,17 @@ if __name__ == "__main__":
             # for modeln in ["lgr"]:
             args.modeln = modeln
             # Ref: https://optuna.readthedocs.io/en/stable/faq.html#how-to-define-objective-functions-that-have-own-arguments
-            study.optimize(lambda trial: main(args, trial), n_trials=args.tune_n_trials)
+            study.optimize(
+                lambda trial: run_experiment(args, trial), n_trials=args.tune_n_trials
+            )
 
         # Evaluate mode
         evaluate_post_tuning(args, study)
     else:
-        main(args)
+        run_experiment(args)
+
+
+if __name__ == "__main__":
+    load_cli_args()
+    args = init_cli_args()
+    main(args)
