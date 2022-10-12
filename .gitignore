@@ -8,6 +8,7 @@ options.yml
 lightning_logs/
 mlruns/
 local_data/
+img_artifacts/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -137,3 +138,4 @@ dmypy.json
 
 # Directories to be ignored
 ./Data/
+
