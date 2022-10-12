@@ -313,7 +313,7 @@ class TestWindowMask(unittest.TestCase):
             [0, 1, 5, 6, 7, 8, 9],
             [0, 5, 6, 7, 9],
         ]
-        slide_window = 0  # Ignore for simplicity
+        slide_window_by = 0  # Ignore for simplicity
         for (pre_start_delta, post_start_delta, mask_end), correct_rows in zip(
             time_windows, correct_df_rows
         ):
@@ -323,11 +323,11 @@ class TestWindowMask(unittest.TestCase):
                 pre_start_delta,
                 post_start_delta,
                 mask_end,
-                slide_window,
+                slide_window_by,
                 correct_rows,
             )
 
-    def test_slide_window(self):
+    def test_slide_window_by(self):
         # e.g., patient[0] has 2 days of data before start, and 2 days after
         ndays_per_pt = [(2, 2), (1, 1), (2, 1), (1, 2)]
         df, start_dates = self._create_patient_df(ndays_per_pt)
@@ -341,7 +341,7 @@ class TestWindowMask(unittest.TestCase):
             ({"DAYS": 2}, None, "Start Date", 1),  # Window size = 2, slide = 1
             ({"DAYS": 2}, None, "Start Date", 2),  # Window size = 2, slide = 2
         ]
-        # test on time_windows x slide_windows, if w=1,s=1 then it should be 1 entry
+        # test on time_windows x slide_window_bys, if w=1,s=1 then it should be 1 entry
         # reference df for indices
         correct_df_rows = [
             # all should work, it will be the day before start date
@@ -361,7 +361,7 @@ class TestWindowMask(unittest.TestCase):
             pre_start_delta,
             post_start_delta,
             mask_end,
-            slide_window,
+            slide_window_by,
         ), correct_rows in zip(time_windows, correct_df_rows):
             self._test_windows(
                 df,
@@ -369,7 +369,7 @@ class TestWindowMask(unittest.TestCase):
                 pre_start_delta,
                 post_start_delta,
                 mask_end,
-                slide_window,
+                slide_window_by,
                 correct_rows,
             )
 
@@ -380,7 +380,7 @@ class TestWindowMask(unittest.TestCase):
         pre_start_delta: Dict[str, int],
         post_start_delta: Dict[str, int],
         mask_end: str,
-        slide_window: int,
+        slide_window_by: int,
         correct_rows: List[List[int]],
     ):
         """
@@ -394,7 +394,7 @@ class TestWindowMask(unittest.TestCase):
             post_start_delta,
             # mask_end=mask_end if mask_end else "End Date",
             mask_end,
-            slide_window=slide_window,
+            slide_window_by=slide_window_by,
         )
         masked_df = apply_time_window_mask(df, "TIME_COL", time_mask)
         correct_df = df.copy(deep=True)

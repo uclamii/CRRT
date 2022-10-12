@@ -32,7 +32,7 @@ def static_learning(df: pd.DataFrame, args: Namespace):
     data = SklearnCRRTDataModule.from_argparse_args(df, args, filters=filters)
 
     # Pass the original datasets split pt_ids if doing rolling window analysis
-    if args.slide_window:
+    if args.slide_window_by:
         with open(SPLIT_IDS_PATH, "rb") as f:
             reference_ids = pickle.load(f)
             reference_ids = {
@@ -49,20 +49,22 @@ def static_learning(df: pd.DataFrame, args: Namespace):
     model = CRRTStaticPredictor.from_argparse_args(args)
     if args.stage == "eval":
         # Load up trained portion and hparams
-        if args.slide_window:  # Override with already trained model
+        if (
+            not args.tune_n_trials and args.slide_window_by == 0
+        ) or args.slide_window_by:  # Override with already trained model
             model.load_model(MODEL_DIR)
-        else:
+        else:  # executed at the end of tuning/one-off and if slide_window_by is not 0/None
             model.load_model(args.best_model_path)
             # if tuning the best model will never be dumped, so we dump it on the evaluation of the best model on original reference window
-            if args.tune_n_trials and args.slide_window == 0:
+            if args.tune_n_trials and args.slide_window_by == 0:
                 dump_artifacts_for_rolling_windows(data, model)
         return model.evaluate(data, "test")
     else:  # Training / tuning
         model.fit(data)
 
         # only want to serialize artifacts on training if we're not tuning and we're training the model on the original reference window (not slided yet)
-        # functionally slide_window = 0 == None, but 0 indicates there will be sliding in the future
-        if not args.tune_n_trials and args.slide_window == 0:
+        # functionally slide_window_by = 0 == None, but 0 indicates there will be sliding in the future
+        if not args.tune_n_trials and args.slide_window_by == 0:
             dump_artifacts_for_rolling_windows(data, model)
 
         # Don't want to run extensive evaluation, just basic metrics for tuning/training

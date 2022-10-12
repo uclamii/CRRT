@@ -175,7 +175,7 @@ def merge_features_with_outcome(
     pre_start_delta: Optional[Dict[str, int]] = None,
     post_start_delta: Optional[Dict[str, int]] = None,
     time_window_end: str = "Start Date",
-    slide_window: int = 0,
+    slide_window_by: int = 0,
 ) -> pd.DataFrame:
     """
     Loads outcomes and features and then merges them.
@@ -186,7 +186,7 @@ def merge_features_with_outcome(
     merge_on = ["IP_PATIENT_ID", "Start Date"]
     outcomes_df = load_outcomes(raw_data_dir, group_by=merge_on)
     time_window = get_time_window_mask(
-        outcomes_df, pre_start_delta, post_start_delta, time_window_end, slide_window
+        outcomes_df, pre_start_delta, post_start_delta, time_window_end, slide_window_by
     )
 
     # this needs to come after load outcomes
@@ -263,6 +263,7 @@ def get_preprocessed_df_path(args: Namespace) -> str:
         args.post_start_delta,
         args.time_interval,
         args.time_window_end,
+        args.slide_window_by,
         args.preprocessed_df_file,
         args.serialization,
     )

@@ -36,7 +36,7 @@ def get_time_window_mask(
     pre_start_delta: Optional[Dict[str, int]] = None,
     post_start_delta: Optional[Dict[str, int]] = None,
     mask_end: str = "End Date",
-    slide_window: int = 0,
+    slide_window_by: int = 0,
 ) -> pd.DataFrame:
     """
     Assumes outcomes_df index is [pt, start date]
@@ -44,7 +44,7 @@ def get_time_window_mask(
     Mask is [start date - pre_start_delta, min(end date, start date + post_start_delta)] if both are specified.
     If neither are specified, [start date, mask_end].
 
-    If slide_window is specified (positive) it will slide the window up by n days.
+    If slide_window_by is specified (positive) it will slide the window up by n days.
     NOTE: Even if a patient doesn't have pre_start_delta days of data,
     if after sliding their measurements are still in the new/slided range,
     then they will be included.
@@ -78,10 +78,10 @@ def get_time_window_mask(
         # if I modify mask_end_interval it will modify window_dates, so copy
         mask_end_interval = window_dates[mask_end].copy()
 
-    if slide_window:  # Ignore null
+    if slide_window_by:  # Ignore null
         # Slide the window (by default 0 days, so no sliding occurs)
-        mask_start_interval += timedelta(days=slide_window)
-        mask_end_interval += timedelta(days=slide_window)
+        mask_start_interval += timedelta(days=slide_window_by)
+        mask_end_interval += timedelta(days=slide_window_by)
 
     time_window = pd.concat(
         [window_dates["Start Date"], mask_start_interval, mask_end_interval],

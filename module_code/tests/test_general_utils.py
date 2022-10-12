@@ -54,8 +54,8 @@ class TestLoading(unittest.TestCase):
             "df_1Dagg_[startdate,enddate].feather",
         )
 
-        # Test slide_window
-        with self.subTest("slide_window"):
+        # Test slide_window_by
+        with self.subTest("slide_window_by"):
             # Test null and 0
             self.assertEqual(
                 get_preprocessed_file_name(
