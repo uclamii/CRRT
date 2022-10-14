@@ -250,6 +250,7 @@ def process_and_serialize_raw_data(
         args.pre_start_delta,
         args.post_start_delta,
         args.time_window_end,
+        args.slide_window_by,
     )  # 140s ~2.5 mins, 376.5s ~6mins for daily aggregation
     logging.info(f"Loading took {time.time() - start_time} seconds.")
     serialize_fn = getattr(df, f"to_{args.serialization}")

@@ -76,6 +76,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # remove unwanted columns, esp non-numeric ones, before pad and pack
         X = X.select_dtypes(["number"])
 
+        # TODO: this is wrong bc of feature selection
         self.nfeatures = X.shape[1]
 
         train_tuple, val_tuple, test_tuple = self.split_dataset(X, y, reference_ids)
