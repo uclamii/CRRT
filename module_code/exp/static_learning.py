@@ -1,5 +1,6 @@
 from argparse import Namespace
 import pickle
+import cloudpickle  # Allows serializing functions
 import pandas as pd
 from os.path import join
 
@@ -8,6 +9,7 @@ from models.static_models import CRRTStaticPredictor
 
 SPLIT_IDS_PATH = join("local_data", "split_ids.pkl")
 COLUMNS_PATH = join("local_data", "columns.pkl")
+DATA_TRANSFORM_PATH = join("local_data", "data_transform.pkl")
 MODEL_DIR = join("local_data", "static_model")
 
 
@@ -18,8 +20,11 @@ def dump_artifacts_for_rolling_windows(
     model.save_model(MODEL_DIR)  # will ensure path exists
     with open(SPLIT_IDS_PATH, "wb") as f:
         pickle.dump(data.split_pt_ids, f)
-    with open(COLUMNS_PATH, "wb") as f:  # dump columns after feature selection
-        pickle.dump(data.selected_columns_mask, f)
+    with open(COLUMNS_PATH, "wb") as f:  # dump  all columns to align
+        pickle.dump(data.columns, f)
+    with open(DATA_TRANSFORM_PATH, "wb") as f:
+        # Ref: https://github.com/scikit-learn/scikit-learn/issues/17390
+        cloudpickle.dump(data.data_transform, f)
 
 
 def static_learning(df: pd.DataFrame, args: Namespace):
@@ -39,11 +44,18 @@ def static_learning(df: pd.DataFrame, args: Namespace):
                 split: pd.Index(split_ids) for split, split_ids in reference_ids.items()
             }  # enforce Index
         with open(COLUMNS_PATH, "rb") as f:
-            reference_cols = pickle.load(f)
+            original_columns = pickle.load(f)
+        with open(DATA_TRANSFORM_PATH, "rb") as f:
+            data_transform = cloudpickle.load(f)
     else:
         reference_ids = None
-        reference_cols = None
-    data.setup(reference_ids=reference_ids, reference_cols_mask=reference_cols)
+        original_columns = None
+        data_transform = None
+    data.setup(
+        reference_ids=reference_ids,
+        reference_cols=original_columns,
+        data_transform=data_transform,
+    )
 
     # Then need to update the predictor
     model = CRRTStaticPredictor.from_argparse_args(args)

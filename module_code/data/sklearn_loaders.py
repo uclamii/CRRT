@@ -56,9 +56,8 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self,
         stage: Optional[str] = None,
         reference_ids: Optional[Dict[str, pd.Index]] = None,
-        reference_cols_mask: Optional[
-            List[bool]
-        ] = None,  # as a mask for feature selection
+        reference_cols: Optional[Union[List[str], pd.Index]] = None,
+        data_transform: Optional[Callable[..., np.ndarray]] = None,
     ):
         """
         Ops performed across GPUs. e.g. splits, transforms, etc.
@@ -76,8 +75,20 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # remove unwanted columns, esp non-numeric ones, before pad and pack
         X = X.select_dtypes(["number"])
 
+        # add reference cols if not none
+        if reference_cols is not None:
+            # make sure columns in original exist here (but they're all missing)
+            # the missing values will be simple imputed (ctn) and 0 imputed (nan)
+            # by the serialized transform function
+            # ref: https://stackoverflow.com/a/30943503/1888794
+            X = X.reindex(columns=reference_cols)
+            # drop cols in X but not in reference
+            X = X.drop(X.columns.difference(reference_cols), axis=1)
+
         # TODO: this is wrong bc of feature selection
-        self.nfeatures = X.shape[1]
+        # self.nfeatures = X.shape[1]
+        # need to save this before feature selection for sliding window analysis
+        self.columns = X.columns
 
         train_tuple, val_tuple, test_tuple = self.split_dataset(X, y, reference_ids)
 
@@ -90,9 +101,10 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             self.test_filters = {k: v(test_tuple[0]) for k, v in self.filters.items()}
 
         # fit pipeline on train, call transform in get_item of dataset
-        self.data_transform = self.get_post_split_transform(
-            train_tuple, reference_cols_mask
-        )
+        if data_transform is not None:
+            self.data_transform = data_transform
+        else:
+            self.data_transform = self.get_post_split_transform(train_tuple)
 
         # set self.train, self.val, self.test
         # self.train = CRRTDataset(train_tuple, self.data_transform)
@@ -134,11 +146,6 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
 
         data, labels = train
         pipeline.fit(data, labels)
-        # Save which features will get selected
-        # TODO: Log this?
-        self.selected_columns_mask = pipeline.named_steps[
-            "feature-selection"
-        ].get_support()
 
         return pipeline.transform
 

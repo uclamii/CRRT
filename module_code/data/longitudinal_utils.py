@@ -174,7 +174,7 @@ def hcuppy_map_code(
     df: pd.DataFrame,
     code_col: str,
     exploded_cols: List[str],
-    hcuppy_converter_function: Callable[[str], str],
+    hcuppy_converter_function: Callable[[str], Dict[str, str]],
 ) -> pd.DataFrame:
     """Use hcuppy lib to map ICD to CCS or CPT."""
     mapped_dict = df[code_col].apply(lambda code: hcuppy_converter_function(code))
@@ -215,6 +215,7 @@ def aggregate_cat_feature(
 
     # Get dummies for the categorical column
     cat_feature = pd.get_dummies(cat_df[cat_df_cols], columns=[agg_on])
+    # TODO: CategoricalDtype with all the CCS codes here
 
     # Sum across a patient and per CRRT treatment (indicated by Start Date):
     # per time interval (if specified) over a whole time window

@@ -334,8 +334,11 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         The filters can be either the bool series filter itself, or a function that produces one given the df.
         """
         X, y = getattr(data, stage)
-        if hasattr(data, "selected_columns_mask"):
-            columns = data.columns[data.selected_columns_mask]
+        if hasattr(data, "data_transform"):
+            selected_columns_mask = data.data_transform.__self__.named_steps[
+                "feature-selection"
+            ].get_support()
+            columns = data.columns[selected_columns_mask]
         else:
             columns = data.columns
         categorical_columns = data.categorical_columns.intersection(columns)
