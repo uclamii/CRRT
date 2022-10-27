@@ -367,19 +367,29 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
     def eval_and_log(
         self,
-        data: np.ndarray,
-        labels: np.ndarray,
+        data: pd.DataFrame,
+        labels: pd.Series,
         prefix: str,
         categorical_columns: Union[List[str], Index],
         decision_threshold: float = 0.5,
     ) -> Dict[str, Any]:
         """Logs metrics and curves/plots."""
         metrics = None
+        predict_proba = self.predict_proba(data.values)[:, 1]
+        # np.save(predict_probas_file, predict_proba)
+
+        # log predict probabilities
+        predict_probas_file = join("predict_probas", f"{prefix}_predict_probas.pkl")
+        makedirs(dirname(predict_probas_file), exist_ok=True)  # ensure dir exists
+        predict_probas = pd.Series(predict_proba, index=labels.index)
+        predict_probas.to_pickle(predict_probas_file)
+        mlflow.log_artifact(predict_probas_file, predict_probas_file)
+
         # Metrics
         if self.static_model.hparams["metric_names"] is not None:
             metrics = {
                 f"{prefix}_{metric_name}": metric_fn(
-                    labels, self.predict_proba(data.values)[:, 1], decision_threshold
+                    labels, predict_proba, decision_threshold
                 )
                 for metric_name, metric_fn in zip(
                     self.static_model.hparams["metric_names"],
@@ -395,11 +405,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.curves,
             ):
                 mlflow.log_figure(
-                    curve.from_predictions(
-                        labels, self.predict_proba(data.values)[:, 1]
-                    )
-                    .plot()
-                    .figure_,
+                    curve.from_predictions(labels, predict_proba).plot().figure_,
                     join("img_artifacts", "curves", f"{prefix}_{curve_name}.png"),
                 )
 

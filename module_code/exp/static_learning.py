@@ -33,6 +33,11 @@ def static_learning(df: pd.DataFrame, args: Namespace):
         "heart": lambda df: df["heart_pt_indicator"] == 1,
         "liver": lambda df: df["liver_pt_indicator"] == 1,
         "infection": lambda df: df["infection_pt_indicator"] == 1,
+        "no_heart_liver_infection": lambda df: (
+            (df["infection_pt_indicator"] == 0)
+            & (df["heart_pt_indicator"] == 0)
+            & (df["liver_pt_indicator"] == 0)
+        ),
     }
     data = SklearnCRRTDataModule.from_argparse_args(df, args, filters=filters)
 
@@ -83,5 +88,6 @@ def static_learning(df: pd.DataFrame, args: Namespace):
         model.static_model.hparams["curve_names"] = None
         model.static_model.hparams["error_analysis"] = None
         model.static_model.hparams["top_k_feature_importance"] = None
+        # informs tuning, different from testing/eval
         return model.evaluate(data, "val")
         # model.evaluate(data, "train")
