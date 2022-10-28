@@ -383,7 +383,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         makedirs(dirname(predict_probas_file), exist_ok=True)  # ensure dir exists
         predict_probas = pd.Series(predict_proba, index=labels.index)
         predict_probas.to_pickle(predict_probas_file)
-        mlflow.log_artifact(predict_probas_file, predict_probas_file)
+        mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
 
         # Metrics
         if self.static_model.hparams["metric_names"] is not None:

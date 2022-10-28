@@ -9,7 +9,7 @@ import numpy as np
 # from sklearn.experimental import enable_iterative_imputer  # noqa
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedGroupKFold
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import SelectKBest
 
@@ -168,6 +168,24 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             return SelectThreshold(f_pearsonr, threshold=self.corr_thresh)
         # passthrough transform
         return SelectKBest(lambda X, y: np.zeros(X.shape[1]), k="all")
+
+    def stratify_groupby_split(self, X, y, n_splits):
+        # TODO TEST
+        groups = X["IP_PATIENT_ID"]
+        cv = StratifiedGroupKFold(
+            n_splits=n_splits, shuffle=True, random_state=self.seed
+        )
+        for _, (train_idxs, test_idxs) in enumerate(cv.split(X, y, groups)):
+            # We only need one split
+            break
+        return train_idxs, test_idxs
+        """
+        # Use:
+        train_val_idxs, test_idxs = stratify_groupby_split(X, y, n_splits=5)  # 1/5 = 20%
+        train_val_X = X.loc[train_val_idxs].reset_index(drop=True).copy()
+        train_val_y = y.loc[train_val_idxs].reset_index(drop=True).copy()
+        train_idxs, val_idxs = stratify_groupby_split(train_val_X, train_val_y, n_splits=5)
+        """
 
     def split_dataset(
         self,
