@@ -80,8 +80,17 @@ def get_time_window_mask(
 
     if slide_window_by:  # Ignore null
         # Slide the window (by default 0 days, so no sliding occurs)
+        # slide window up from start
         mask_start_interval += timedelta(days=slide_window_by)
         mask_end_interval += timedelta(days=slide_window_by)
+
+        # # slide window down from end
+        # mask_start_interval = (
+        #     mask_end_interval
+        #     - get_delta(pre_start_delta)
+        #     - timedelta(days=slide_window_by)
+        # )
+        # mask_end_interval -= timedelta(days=slide_window_by)
 
     time_window = pd.concat(
         [window_dates["Start Date"], mask_start_interval, mask_end_interval],

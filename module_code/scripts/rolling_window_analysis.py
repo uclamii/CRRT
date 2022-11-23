@@ -18,11 +18,13 @@ if __name__ == "__main__":
 
     # set slide_window_by 0 and run
     dargs = vars(args)
-    dargs.update({"slide_window_by": 0})
+    dargs.update({"slide_window_by": 0, "max_days_on_crrt": MAX_SLIDE})
     main(args)
     # Evaluate if not tuning
     if not args.tune_n_trials:
-        dargs.update({"slide_window_by": 0, "stage": "eval"})
+        dargs.update(
+            {"slide_window_by": 0, "stage": "eval", "max_days_on_crrt": MAX_SLIDE}
+        )
         main(args)
 
     for i in range(1, MAX_SLIDE + 1):
@@ -30,7 +32,9 @@ if __name__ == "__main__":
         dargs = vars(args)
         dargs.update({"slide_window_by": i})
         if not retrain:  # just evaluate and make sure not to tune
-            dargs.update({"stage": "eval", "tune_n_trials": 0})
+            dargs.update(
+                {"stage": "eval", "tune_n_trials": 0, "max_days_on_crrt": MAX_SLIDE}
+            )
         main(args)
 
 
