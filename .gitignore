@@ -10,6 +10,7 @@ mlruns/
 local_data/
 img_artifacts/
 predict_probas/
+.aim/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
