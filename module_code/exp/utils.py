@@ -81,7 +81,8 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials):
         params = {
             "pre_start_delta": time_delta_str_to_dict(
                 trials.suggest_categorical(
-                    "pre_start_delta", ["7d", "6d", "5d", "4d", "3d", "2d", "1d"]
+                    "pre_start_delta",
+                    ["14d", "10d", "7d", "6d", "5d", "4d", "3d", "2d", "1d"],
                 )
             ),
             # "modeln": modeln,
@@ -91,6 +92,9 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials):
                 # If we dont have it in the grid just use default kwargs (by setting {})
                 for k, v in GRID_HP_MAP.get(modeln, {}).items()
             },
+            "impute_method": trials.suggest_categorical(
+                "imputation", ["simple", "knn"]
+            ),
         }
 
         # we run trials back to back so set a value for one and clear the other out

@@ -7,7 +7,7 @@ import numpy as np
 # from sktime.transformations.series.impute import Imputer
 # explicitly require this experimental feature
 # from sklearn.experimental import enable_iterative_imputer  # noqa
-from sklearn.impute import SimpleImputer
+from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split, StratifiedGroupKFold
 from sklearn.pipeline import Pipeline
@@ -37,6 +37,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         val_split_size: float,
         kbest: int = None,
         corr_thresh: float = None,
+        impute_method: str = "simple",
         filters: Dict[str, Callable] = None,
     ):
         super().__init__()
@@ -51,6 +52,12 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.kbest = kbest
         self.corr_thresh = corr_thresh
         self.filters = filters
+        self.impute_method = impute_method
+        if self.impute_method == "simple":
+            self.imputer = SimpleImputer(strategy="mean")
+        # TODO: allow different neighbors to be passed in to be tuned
+        elif self.impute_method == "knn":
+            self.imputer = KNNImputer()
 
     def setup(
         self,
@@ -128,8 +135,8 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                     ColumnTransformer(
                         [  # (name, transformer, columns) tuples
                             (
-                                "fillna",
-                                SimpleImputer(strategy="mean"),
+                                f"{self.impute_method}-impute",
+                                self.imputer,
                                 # TODO convert to indices
                                 self.ctn_columns,
                             )
@@ -138,7 +145,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                     ),
                 ),
                 # zero out everything else
-                ("simple-impute", SimpleImputer(strategy="constant", fill_value=0)),
+                (f"0-fill-cat", SimpleImputer(strategy="constant", fill_value=0)),
                 # feature-selection doesn't allow NaNs in the data, make sure to impute first.
                 ("feature-selection", self.get_feature_selection(reference_cols_mask)),
             ]
@@ -267,5 +274,13 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             type=float,
             default=None,
             help="Name of outcome column in outcomes table or preprocessed df.",
+        )
+        p.add_argument(
+            "--impute-method",
+            dest="impute_method",
+            type=str,
+            default="simple",
+            choices=["simple", "knn"],
+            help="Which impute_method method is desired.",
         )
         return p
