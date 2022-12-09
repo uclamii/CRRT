@@ -1,11 +1,11 @@
 import logging
 import os
 import numpy as np
-import pandas as pd
 from functools import reduce
 from typing import List, Tuple
 from scipy.stats import pearsonr
-import math
+
+from pandas import DataFrame, Series, merge, get_dummies, concat, read_csv
 
 from sklearn.feature_selection import f_classif
 from sklearn.utils.validation import check_is_fitted
@@ -18,10 +18,10 @@ from data.longitudinal_utils import aggregate_cat_feature
 
 
 def onehot(
-    df: pd.DataFrame,
+    df: DataFrame,
     cols_to_onehot: List[str],
     sum_across_patient: bool = False,
-) -> pd.DataFrame:
+) -> DataFrame:
     """
     One-hot encodes list of features and add it back into the df.
     If summing across the patient, it will aggregate across that patient (which shouldn't affect columns that don't have more than one entry anyway.)
@@ -33,17 +33,16 @@ def onehot(
         # add back into the df, drop the original columns since we have onehot version now
         # we have to merge instead of concat bc agg_cat_features leaves in patient id (for summation)
         return reduce(
-            lambda df1, df2: pd.merge(df1, df2, on="IP_PATIENT_ID"),
+            lambda df1, df2: merge(df1, df2, on="IP_PATIENT_ID"),
             onehot_dfs,
         )
 
     # otherwise, just do normal dummies and concat
     onehot_dfs = [
-        pd.get_dummies(df[onehot_col], prefix=onehot_col)
-        for onehot_col in cols_to_onehot
+        get_dummies(df[onehot_col], prefix=onehot_col) for onehot_col in cols_to_onehot
     ]
     # add back into the df, drop the original columns since we have onehot version now
-    return pd.concat([df.drop(cols_to_onehot, axis=1)] + onehot_dfs, axis=1)
+    return concat([df.drop(cols_to_onehot, axis=1)] + onehot_dfs, axis=1)
 
 
 def loading_message(what_is_loading: str) -> None:
@@ -56,7 +55,7 @@ def read_files_and_combine(
     raw_data_dir: str,
     on: List[str] = ["IP_PATIENT_ID"],
     how: str = "inner",
-) -> pd.DataFrame:
+) -> DataFrame:
     """
     Takes one or more files in a list and returns a combined dataframe.
     Deals with strangely formatted files from the dataset.
@@ -66,24 +65,24 @@ def read_files_and_combine(
     for file in files:
         try:
             # Try normally reading the csv with pandas, if it fails the formatting is strange
-            df = pd.read_csv(os.path.join(raw_data_dir, file))
+            df = read_csv(os.path.join(raw_data_dir, file))
         except Exception:
             logging.warning(f"Unexpected encoding in {file}. Encoding with cp1252.")
-            df = pd.read_csv(os.path.join(raw_data_dir, file), encoding="cp1252")
+            df = read_csv(os.path.join(raw_data_dir, file), encoding="cp1252")
 
         # Enforce all caps column names
         dfs.append(df.set_axis(df.columns.str.upper(), axis=1))
 
-    combined = reduce(lambda df1, df2: pd.merge(df1, df2, on=on, how=how), dfs)
+    combined = reduce(lambda df1, df2: merge(df1, df2, on=on, how=how), dfs)
     return combined
 
 
-def f_pearsonr(X: pd.DataFrame, labels: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
+def f_pearsonr(X: DataFrame, labels: Series) -> Tuple[np.ndarray, np.ndarray]:
     """
     Use correlation of features to the labels as a scoring function
     for sklearn feature selection.
     """
-    if isinstance(X, pd.DataFrame):
+    if isinstance(X, DataFrame):
         scores_and_pvalues = X.apply(lambda feature: pearsonr(feature, labels), axis=0)
         scores, pvalues = zip(*scores_and_pvalues)
         scores = scores.fillna(0)
@@ -132,7 +131,7 @@ class SelectThreshold(_BaseFilter):
         return mask
 
 
-def get_pt_type_indicators(df: pd.DataFrame) -> pd.DataFrame:
+def get_pt_type_indicators(df: DataFrame) -> DataFrame:
     """Look in diagnoses and problems for ccs codes related to heart, liver, and infection."""
     tables = ["dx", "pr"]
     types = [

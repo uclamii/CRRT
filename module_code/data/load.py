@@ -5,8 +5,13 @@ from os.path import join
 from pathlib import Path
 import sys
 import time
-import pandas as pd
 from typing import Dict, List, Optional
+from pandas import DataFrame, DatetimeIndex, read_excel, read_csv, merge
+
+# for serialization on the fly
+import pandas as pd
+
+serialize_pkg = pd
 
 from data.longitudinal_features import (
     load_diagnoses,
@@ -26,7 +31,7 @@ from data.preprocess import preprocess_data
 from utils import get_preprocessed_file_name
 
 
-def get_num_prev_crrt_treatments(df: pd.DataFrame):
+def get_num_prev_crrt_treatments(df: DataFrame):
     """
     Works on any df as as long as it has pt id and start date.
     Returns number of prev crrt treatments per [pt, start date].
@@ -50,7 +55,7 @@ def load_outcomes(
     raw_data_dir: str,
     group_by: List[str],
     outcome_file: str = "CRRT Deidentified 2015-2021YTD_VF.xlsx",
-) -> pd.DataFrame:
+) -> DataFrame:
     """
     Load outcomes from outcomes file.
     Given higher granularity, so we include a binary outcome (recommend crrt).
@@ -58,7 +63,7 @@ def load_outcomes(
     """
 
     loading_message("Outcomes")
-    outcomes_df = pd.read_excel(
+    outcomes_df = read_excel(
         join(raw_data_dir, outcome_file), sheet_name="2015-2021 YTD"
     )
 
@@ -82,7 +87,7 @@ def load_outcomes(
     outcomes_df["recommend_crrt"] = recommend_crrt.astype(int)
 
     #### Construct other features ####
-    outcomes_df["CRRT Year"] = pd.DatetimeIndex(outcomes_df["End Date"]).year
+    outcomes_df["CRRT Year"] = DatetimeIndex(outcomes_df["End Date"]).year
 
     #### Contruct Num Previous Treatments ####
     # patients can have multiple treatments but each (pt, treatment) is 1 sample
@@ -102,7 +107,7 @@ def load_static_features(
         "Patient_Demographics.txt",
         "Social_History.txt",
     ),
-) -> pd.DataFrame:
+) -> DataFrame:
     loading_message("Static Features")
     """Returns static features dataframe. 1 row per patient."""
     # include all patients from all tables, so outer join
@@ -141,12 +146,12 @@ def load_static_features(
 
 
 def map_provider_id_to_type(
-    static_df: pd.DataFrame,
+    static_df: DataFrame,
     raw_data_dir: str,
     provider_mapping_file: str = "Providers.txt",
-) -> pd.DataFrame:
+) -> DataFrame:
     """There are a bunch of IDs but they mostly all map to the same type, so here we'll use the string name instead of code."""
-    provider_mapping = pd.read_csv(join(raw_data_dir, provider_mapping_file))
+    provider_mapping = read_csv(join(raw_data_dir, provider_mapping_file))
     provider_mapping = dict(
         zip(provider_mapping["IP_PROVIDER_ID"], provider_mapping["PROVIDER_TYPE"])
     )
@@ -158,10 +163,10 @@ def map_provider_id_to_type(
 
 
 def merge_longitudinal_with_static_feaures(
-    longitudinal_features: pd.DataFrame,
-    static_features: pd.DataFrame,
+    longitudinal_features: DataFrame,
+    static_features: DataFrame,
     how: str = "outer",
-) -> pd.DataFrame:
+) -> DataFrame:
     """
     Outer join: patients with no longitudinal data will stil be included.
     Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
@@ -176,7 +181,7 @@ def merge_features_with_outcome(
     post_start_delta: Optional[Dict[str, int]] = None,
     time_window_end: str = "Start Date",
     slide_window_by: int = 0,
-) -> pd.DataFrame:
+) -> DataFrame:
     """
     Loads outcomes and features and then merges them.
     Keeps patients even if they're missing from a data table (Feature).
@@ -214,7 +219,7 @@ def merge_features_with_outcome(
 
     # outer join features with each other so patients who might not have allergies,  for example, are still included
     features = reduce(
-        lambda df1, df2: pd.merge(df1, df2, on=merge_on, how="outer"), longitudinal_dfs
+        lambda df1, df2: merge(df1, df2, on=merge_on, how="outer"), longitudinal_dfs
     )
     # NOTE: this will be serialized separately instead
     # features = merge_longitudinal_with_static_feaures(features, load_static_features(raw_data_dir), how="outer")
@@ -231,7 +236,7 @@ def merge_features_with_outcome(
 
 def process_and_serialize_raw_data(
     args: Namespace, preprocessed_df_path: str
-) -> pd.DataFrame:
+) -> DataFrame:
     # Keep a log of how preprocessing went. can call logger anywhere inside of logic from here
     logging.basicConfig(
         level=logging.DEBUG,
@@ -242,7 +247,9 @@ def process_and_serialize_raw_data(
             logging.StreamHandler(sys.stdout),
         ],
     )
-    logging.info("Preprocessed file does not exist! Creating...")
+    logging.info(
+        f"Preprocessed file {preprocessed_df_path} does not exist! Creating..."
+    )
     start_time = time.time()
     df = merge_features_with_outcome(
         args.raw_data_dir,
@@ -272,10 +279,10 @@ def get_preprocessed_df_path(args: Namespace) -> str:
     return preprocessed_df_path
 
 
-def load_data(args: Namespace) -> pd.DataFrame:
+def load_data(args: Namespace) -> DataFrame:
     preprocessed_df_path = get_preprocessed_df_path(args)
     try:
-        deserialize_fn = getattr(pd, f"read_{args.serialization}")
+        deserialize_fn = getattr(serialize_pkg, f"read_{args.serialization}")
         # raise IOError
         df = deserialize_fn(preprocessed_df_path)
     except IOError:

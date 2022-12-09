@@ -277,7 +277,6 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         )
         p.add_argument(
             "--impute-method",
-            dest="impute_method",
             type=str,
             default="simple",
             choices=["simple", "knn"],

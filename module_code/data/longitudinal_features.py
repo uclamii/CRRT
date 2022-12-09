@@ -1,6 +1,7 @@
 import logging
-import pandas as pd
 from typing import Optional
+
+from pandas import DataFrame, to_numeric
 
 from data.longitudinal_utils import (
     aggregate_cat_feature,
@@ -24,8 +25,8 @@ def load_diagnoses(
     raw_data_dir: str,
     dx_file: str = "Encounter_Diagnoses.txt",
     time_interval: Optional[str] = None,
-    time_window: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
+    time_window: Optional[DataFrame] = None,
+) -> DataFrame:
     loading_message("Diagnoses")
     dx_df = read_files_and_combine([dx_file], raw_data_dir)
 
@@ -61,8 +62,8 @@ def load_vitals(
     raw_data_dir: str,
     vitals_file: str = "Flowsheet_Vitals.txt",
     time_interval: Optional[str] = None,
-    time_window: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
+    time_window: Optional[DataFrame] = None,
+) -> DataFrame:
     loading_message("Vitals")
     vitals_df = read_files_and_combine([vitals_file], raw_data_dir)
     vitals_df = split_sbp_and_dbp(vitals_df)
@@ -93,7 +94,7 @@ def load_vitals(
     return vitals_feature
 
 
-def split_sbp_and_dbp(vitals_df: pd.DataFrame) -> pd.DataFrame:
+def split_sbp_and_dbp(vitals_df: DataFrame) -> DataFrame:
     # Split BP into SBP and DBP
     vitals_df["VITAL_SIGN_TYPE"].replace({"BP": "SBP/DBP"}, inplace=True)
     explode_cols = ["VITAL_SIGN_VALUE", "VITAL_SIGN_TYPE"]
@@ -113,8 +114,8 @@ def load_medications(
     raw_data_dir: str,
     rx_file: str = "Medications.txt",
     time_interval: Optional[str] = None,
-    time_window: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
+    time_window: Optional[DataFrame] = None,
+) -> DataFrame:
     """
     NOTE: The medications file originally was Medications_19-000093_10082020.txt
     We needed epic medication classes for less granularity which was processed and ran
@@ -139,12 +140,12 @@ def load_labs(
     raw_data_dir: str,
     labs_file: str = "Labs.txt",
     time_interval: Optional[str] = None,
-    time_window: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
+    time_window: Optional[DataFrame] = None,
+) -> DataFrame:
     loading_message("Labs")
     labs_df = read_files_and_combine([labs_file], raw_data_dir)
     # Force numeric, ignore strings
-    labs_df["RESULTS"] = pd.to_numeric(labs_df["RESULTS"], errors="coerce")
+    labs_df["RESULTS"] = to_numeric(labs_df["RESULTS"], errors="coerce")
 
     labs_feature = aggregate_ctn_feature(
         labs_df,
@@ -165,8 +166,8 @@ def load_problems(
     problems_file: str = "Problem_Lists.txt",
     problems_dx_file: str = "Problem_List_Diagnoses.txt",
     time_interval: Optional[str] = None,
-    time_window: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
+    time_window: Optional[DataFrame] = None,
+) -> DataFrame:
     loading_message("Problems")
     problems_df = read_files_and_combine(
         [problems_dx_file, problems_file], raw_data_dir
@@ -207,8 +208,8 @@ def load_procedures(
     raw_data_dir: str,
     procedures_file: str = "Procedures.txt",
     time_interval: Optional[str] = None,
-    time_window: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
+    time_window: Optional[DataFrame] = None,
+) -> DataFrame:
     loading_message("Procedures")
     procedures_df = read_files_and_combine([procedures_file], raw_data_dir)
 
