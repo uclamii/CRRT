@@ -5,6 +5,7 @@ from os.path import join
 
 sys.path.insert(0, join(getcwd(), "module_code"))
 
+from data.longitudinal_utils import get_delta
 from utils import load_cli_args, init_cli_args
 from main import main
 
@@ -16,18 +17,28 @@ if __name__ == "__main__":
     orig_args = init_cli_args()
     args = deepcopy(orig_args)
 
+    # Refer to get_optuna_grid for pre_start_delta
+    max_window_tuning_size = (
+        14 if args.tune_n_trials else get_delta(args.pre_start_delta).days
+    )
     # set slide_window_by 0 and run
     dargs = vars(args)
-    dargs.update({"slide_window_by": 0, "max_days_on_crrt": MAX_SLIDE})
+    dargs.update({"slide_window_by": 0, "max_days_on_crrt": max_window_tuning_size})
     main(args)
     # Evaluate if not tuning
     if not args.tune_n_trials:
         dargs.update(
-            {"slide_window_by": 0, "stage": "eval", "max_days_on_crrt": MAX_SLIDE}
+            {
+                "slide_window_by": 0,
+                "stage": "eval",
+                "max_days_on_crrt": max_window_tuning_size,
+            }
         )
         main(args)
 
-    for i in range(1, MAX_SLIDE + 1):
+    # this should be updated from tuning internally, or just set properly
+    num_days_to_slide = get_delta(args.pre_start_delta).days
+    for i in range(1, num_days_to_slide + 1):
         args = deepcopy(orig_args)
         dargs = vars(args)
         dargs.update({"slide_window_by": i})
