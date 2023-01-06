@@ -1,6 +1,6 @@
 import unittest
 
-from module_code.utils import get_preprocessed_file_name
+from module_code.data.utils import get_preprocessed_file_name
 
 
 class TestLoading(unittest.TestCase):

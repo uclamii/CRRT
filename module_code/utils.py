@@ -46,6 +46,12 @@ def add_global_args(
         help="Name of serialization method to use for preprocessed df file.",
     )
     p.add_argument(
+        "--controls-window-size",
+        type=int,
+        default=None,
+        help="When processing controls, set the number of days you want the window size to be. This should align with the window size of CRRT patients.",
+    )
+    p.add_argument(
         "--patient-age",
         type=str,
         choices=["adult", "peds"],
@@ -216,62 +222,3 @@ def init_cli_args() -> Namespace:
     # return p.parse_args()
     # Ignore unrecognized args
     return p.parse_known_args()[0]
-
-
-def time_delta_to_str(delta: Dict[str, int]) -> str:
-    """
-    Coverts timedelta dict to str form: 5 years, 4 months, and 3 days => 5y4m3d
-    Ignore values of 0: 4months and 3 days => 4m3d
-    Assumes order of keys are: years, months, then days.
-    """
-    delta_str = ""
-    for time_name, amount in delta.items():
-        if amount > 0:
-            delta_str += f"{amount}{time_name[0].lower()}"
-    return delta_str
-
-
-def get_preprocessed_file_name(
-    pre_start_delta: Optional[Dict[str, int]] = None,
-    post_start_delta: Optional[Dict[str, int]] = None,
-    time_interval: Optional[str] = None,
-    time_window_end: Optional[str] = None,
-    slide_window_by: Optional[int] = None,
-    preprocessed_df_file: Optional[str] = None,
-    serialization: str = "feather",
-) -> str:
-    """
-    Uses preprocessed_df_file for file name for preprocessed dataframe.
-    However, if it's not provided it will automatically generate a name based on the arguments used to generate the file.
-
-    df_{time interval the features are aggregated in}agg_[{time window start},{time window end}].extension
-    If providing deltas: [startdate-pre_start_delta,startdate+post_start_delta]
-    If providing neither [startdate,time_window_end].
-    If sliding the window (window > 0): [start + i - pre], (start+post | end) + i]
-    """
-    if preprocessed_df_file:
-        return preprocessed_df_file + f".{serialization}"
-    fname = "df"
-    if time_interval:
-        fname += f"_{time_interval}agg"
-    # time window
-    fname += "_[startdate"
-    if slide_window_by:
-        fname += f"+{slide_window_by}"
-
-    if pre_start_delta:
-        # subtracting the delta time
-        fname += f"-{time_delta_to_str(pre_start_delta)}"
-    fname += ","
-    # end of window:
-    if post_start_delta:
-        fname += f"startdate+{time_delta_to_str(post_start_delta)}"
-    else:
-        fname += f"{time_window_end.replace(' ', '').lower()}"
-    if slide_window_by:
-        fname += f"+{slide_window_by}"
-
-    # Close
-    fname += "]"
-
-    return fname + "." + serialization

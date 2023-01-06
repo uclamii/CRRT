@@ -26,9 +26,9 @@ from data.utils import (
     loading_message,
     onehot,
     read_files_and_combine,
+    get_preprocessed_file_name,
 )
 from data.preprocess import preprocess_data
-from utils import get_preprocessed_file_name
 
 
 def get_num_prev_crrt_treatments(df: DataFrame):
@@ -176,6 +176,8 @@ def merge_longitudinal_with_static_feaures(
 
 def merge_features_with_outcome(
     raw_data_dir: str,
+    outcomes_df: DataFrame,
+    merge_on: List[str] = ["IP_PATIENT_ID", "Start Date"],
     time_interval: Optional[str] = None,
     pre_start_delta: Optional[Dict[str, int]] = None,
     post_start_delta: Optional[Dict[str, int]] = None,
@@ -187,9 +189,6 @@ def merge_features_with_outcome(
     Keeps patients even if they're missing from a data table (Feature).
     Will drop patients who are missing outcomes.
     """
-
-    merge_on = ["IP_PATIENT_ID", "Start Date"]
-    outcomes_df = load_outcomes(raw_data_dir, group_by=merge_on)
     time_window = get_time_window_mask(
         outcomes_df, pre_start_delta, post_start_delta, time_window_end, slide_window_by
     )
@@ -238,21 +237,25 @@ def process_and_serialize_raw_data(
     args: Namespace, preprocessed_df_path: str
 ) -> DataFrame:
     # Keep a log of how preprocessing went. can call logger anywhere inside of logic from here
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        # print to stdout and log to file
-        handlers=[
-            logging.FileHandler("dialysis_preproc.log"),
-            logging.StreamHandler(sys.stdout),
-        ],
-    )
+    # logging.basicConfig(
+    #     level=logging.DEBUG,
+    #     format="%(asctime)s [%(levelname)s] %(message)s",
+    #     # print to stdout and log to file
+    #     handlers=[
+    #         # logging.FileHandler("dialysis_preproc.log"),
+    #         logging.StreamHandler(sys.stdout),
+    #     ],
+    # )
     logging.info(
         f"Preprocessed file {preprocessed_df_path} does not exist! Creating..."
     )
+    merge_on = ["IP_PATIENT_ID", "Start Date"]
+    outcomes_df = load_outcomes(args.raw_data_dir, group_by=merge_on)
     start_time = time.time()
     df = merge_features_with_outcome(
         args.raw_data_dir,
+        outcomes_df,
+        merge_on,
         args.time_interval,
         args.pre_start_delta,
         args.post_start_delta,

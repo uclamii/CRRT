@@ -2,10 +2,11 @@ import logging
 import os
 import numpy as np
 from functools import reduce
-from typing import List, Tuple
+from typing import List, Optional, Tuple, Dict
 from scipy.stats import pearsonr
 
 from pandas import DataFrame, Series, merge, get_dummies, concat, read_csv
+from pandas.errors import ParserError
 
 from sklearn.feature_selection import f_classif
 from sklearn.utils.validation import check_is_fitted
@@ -15,6 +16,75 @@ from sklearn.feature_selection._univariate_selection import _BaseFilter, _clean_
 
 # Local
 from data.longitudinal_utils import aggregate_cat_feature
+
+FILE_NAMES = {
+    "cpt": "Procedures.txt",
+    "pr": "Problem_Lists.txt",
+    "pr_dx": "Problem_List_Diagnoses.txt",
+    "labs": "Labs.txt",
+    "rx": "Medications.txt",
+    "vitals": "Flowsheet_Vitals.txt",
+    "dx": "Encounter_Diagnoses.txt",
+}
+
+
+def time_delta_to_str(delta: Dict[str, int]) -> str:
+    """
+    Coverts timedelta dict to str form: 5 years, 4 months, and 3 days => 5y4m3d
+    Ignore values of 0: 4months and 3 days => 4m3d
+    Assumes order of keys are: years, months, then days.
+    """
+    delta_str = ""
+    for time_name, amount in delta.items():
+        if amount > 0:
+            delta_str += f"{amount}{time_name[0].lower()}"
+    return delta_str
+
+
+def get_preprocessed_file_name(
+    pre_start_delta: Optional[Dict[str, int]] = None,
+    post_start_delta: Optional[Dict[str, int]] = None,
+    time_interval: Optional[str] = None,
+    time_window_end: Optional[str] = None,
+    slide_window_by: Optional[int] = None,
+    preprocessed_df_file: Optional[str] = None,
+    serialization: str = "feather",
+) -> str:
+    """
+    Uses preprocessed_df_file for file name for preprocessed dataframe.
+    However, if it's not provided it will automatically generate a name based on the arguments used to generate the file.
+
+    df_{time interval the features are aggregated in}agg_[{time window start},{time window end}].extension
+    If providing deltas: [startdate-pre_start_delta,startdate+post_start_delta]
+    If providing neither [startdate,time_window_end].
+    If sliding the window (window > 0): [start + i - pre], (start+post | end) + i]
+    """
+    if preprocessed_df_file:
+        return preprocessed_df_file + f".{serialization}"
+    fname = "df"
+    if time_interval:
+        fname += f"_{time_interval}agg"
+    # time window
+    fname += "_[startdate"
+    if slide_window_by:
+        fname += f"+{slide_window_by}"
+
+    if pre_start_delta:
+        # subtracting the delta time
+        fname += f"-{time_delta_to_str(pre_start_delta)}"
+    fname += ","
+    # end of window:
+    if post_start_delta:
+        fname += f"startdate+{time_delta_to_str(post_start_delta)}"
+    else:
+        fname += f"{time_window_end.replace(' ', '').lower()}"
+    if slide_window_by:
+        fname += f"+{slide_window_by}"
+
+    # Close
+    fname += "]"
+
+    return fname + "." + serialization
 
 
 def onehot(
@@ -66,6 +136,10 @@ def read_files_and_combine(
         try:
             # Try normally reading the csv with pandas, if it fails the formatting is strange
             df = read_csv(os.path.join(raw_data_dir, file))
+        except ParserError as e:
+            logging.warn(e)
+            logging.warn("Skipping bad lines...")
+            df = read_csv(os.path.join(raw_data_dir, file), on_bad_lines="skip")
         except Exception:
             logging.warning(f"Unexpected encoding in {file}. Encoding with cp1252.")
             df = read_csv(os.path.join(raw_data_dir, file), encoding="cp1252")

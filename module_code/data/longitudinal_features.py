@@ -1,17 +1,16 @@
 import logging
-from typing import Optional
-
+from typing import Optional, Union
 from pandas import DataFrame, to_numeric
+from hcuppy.ccs import CCSEngine
+from hcuppy.cpt import CPT
+
 
 from data.longitudinal_utils import (
     aggregate_cat_feature,
     aggregate_ctn_feature,
     hcuppy_map_code,
 )
-from data.utils import loading_message, read_files_and_combine
-
-from hcuppy.ccs import CCSEngine
-from hcuppy.cpt import CPT
+from data.utils import FILE_NAMES, loading_message, read_files_and_combine
 
 """
 Prefix a OR b = (a|b) followed by _ and 1+ characters of any char.
@@ -23,9 +22,9 @@ CATEGORICAL_COL_REGEX = r"(dx|PHARM_SUBCLASS|pr|CPT|)_.*"
 
 def load_diagnoses(
     raw_data_dir: str,
-    dx_file: str = "Encounter_Diagnoses.txt",
+    dx_file: str = FILE_NAMES["dx"],
     time_interval: Optional[str] = None,
-    time_window: Optional[DataFrame] = None,
+    time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     loading_message("Diagnoses")
     dx_df = read_files_and_combine([dx_file], raw_data_dir)
@@ -60,9 +59,9 @@ def load_diagnoses(
 
 def load_vitals(
     raw_data_dir: str,
-    vitals_file: str = "Flowsheet_Vitals.txt",
+    vitals_file: str = FILE_NAMES["vitals"],
     time_interval: Optional[str] = None,
-    time_window: Optional[DataFrame] = None,
+    time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     loading_message("Vitals")
     vitals_df = read_files_and_combine([vitals_file], raw_data_dir)
@@ -96,7 +95,9 @@ def load_vitals(
 
 def split_sbp_and_dbp(vitals_df: DataFrame) -> DataFrame:
     # Split BP into SBP and DBP
-    vitals_df["VITAL_SIGN_TYPE"].replace({"BP": "SBP/DBP"}, inplace=True)
+    vitals_df["VITAL_SIGN_TYPE"].replace(
+        {"BP": "SBP/DBP", "BLOOD PRESSURE": "SBP/DBP"}, inplace=True
+    )
     explode_cols = ["VITAL_SIGN_VALUE", "VITAL_SIGN_TYPE"]
 
     # Ref: https://stackoverflow.com/a/57122617/1888794
@@ -112,9 +113,9 @@ def split_sbp_and_dbp(vitals_df: DataFrame) -> DataFrame:
 
 def load_medications(
     raw_data_dir: str,
-    rx_file: str = "Medications.txt",
+    rx_file: str = FILE_NAMES["rx"],
     time_interval: Optional[str] = None,
-    time_window: Optional[DataFrame] = None,
+    time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     """
     NOTE: The medications file originally was Medications_19-000093_10082020.txt
@@ -138,9 +139,9 @@ def load_medications(
 
 def load_labs(
     raw_data_dir: str,
-    labs_file: str = "Labs.txt",
+    labs_file: str = FILE_NAMES["labs"],
     time_interval: Optional[str] = None,
-    time_window: Optional[DataFrame] = None,
+    time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     loading_message("Labs")
     labs_df = read_files_and_combine([labs_file], raw_data_dir)
@@ -163,10 +164,10 @@ def load_labs(
 
 def load_problems(
     raw_data_dir: str,
-    problems_file: str = "Problem_Lists.txt",
-    problems_dx_file: str = "Problem_List_Diagnoses.txt",
+    problems_file: str = FILE_NAMES["pr"],
+    problems_dx_file: str = FILE_NAMES["pr_dx"],
     time_interval: Optional[str] = None,
-    time_window: Optional[DataFrame] = None,
+    time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     loading_message("Problems")
     problems_df = read_files_and_combine(
@@ -204,11 +205,15 @@ def load_problems(
     return problems_feature
 
 
+# TODO: make all other functions look like this one? (code_col, time_col, aggregate added as parameters)
 def load_procedures(
     raw_data_dir: str,
-    procedures_file: str = "Procedures.txt",
+    procedures_file: str = FILE_NAMES["cpt"],
+    code_col="PROC_CODE",
+    time_col="PROC_DATE",
     time_interval: Optional[str] = None,
-    time_window: Optional[DataFrame] = None,
+    time_window: Optional[Union[DataFrame, str]] = None,
+    aggregate: bool = True,
 ) -> DataFrame:
     loading_message("Procedures")
     procedures_df = read_files_and_combine([procedures_file], raw_data_dir)
@@ -217,22 +222,25 @@ def load_procedures(
     cpt = CPT()
     procedures_df = hcuppy_map_code(
         procedures_df,
-        code_col="PROC_CODE",
+        code_col=code_col,
         exploded_cols=["CPT_SECTION", "SECTION_DESCRIPTION"],
         hcuppy_converter_function=cpt.get_cpt_section,
     )
 
+    if not aggregate:
+        return procedures_df
+
     procedures_feature = aggregate_cat_feature(
         procedures_df,
         agg_on="CPT_SECTION",
-        time_col="PROC_DATE",
+        time_col=time_col,
         time_interval=time_interval,
         time_window=time_window,
     )
 
     # Any indication of inpatient surgery before crrt start
     surgery_indicator = "CPT_SECTION_CPT1-C"
-    # TODO: filter to the past week regardless of time window. or just check the codes directly?
+    # TODO[HIGH]: filter to the past week regardless of time window. or just check the codes directly?
     procedures_feature["Surgery in Past Week"] = (
         procedures_feature[surgery_indicator] > 0
     ).astype(int)

@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Union
 import numpy as np
 from scipy.stats import skew
 from datetime import timedelta
@@ -203,7 +203,7 @@ def aggregate_cat_feature(
     agg_on: str,
     time_col: Optional[str] = None,
     time_interval: Optional[str] = None,
-    time_window: Optional[DataFrame] = None,
+    time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     """
     Aggregate a categorical feature. Basically "Bag of words".
@@ -247,7 +247,7 @@ def aggregate_ctn_feature(
     agg_values_col: str,
     time_col: str,
     time_interval: Optional[str] = None,
-    time_window: Optional[DataFrame] = None,
+    time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     """Aggregate a continuous longitudinal feature (e.g., vitals, labs).
     Filter time window based on a column name provided.
