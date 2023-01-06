@@ -3,6 +3,7 @@ import sys
 from os import getcwd
 from os.path import join
 
+
 sys.path.insert(0, join(getcwd(), "module_code"))
 
 from data.longitudinal_utils import get_delta
@@ -44,7 +45,11 @@ if __name__ == "__main__":
         dargs.update({"slide_window_by": i})
         if not retrain:  # just evaluate and make sure not to tune
             dargs.update(
-                {"stage": "eval", "tune_n_trials": 0, "max_days_on_crrt": MAX_SLIDE}
+                {
+                    "stage": "eval",
+                    "tune_n_trials": 0,
+                    "max_days_on_crrt": num_days_to_slide,
+                }
             )
         main(args)
 
