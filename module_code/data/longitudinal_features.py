@@ -65,6 +65,7 @@ def load_vitals(
 ) -> DataFrame:
     loading_message("Vitals")
     vitals_df = read_files_and_combine([vitals_file], raw_data_dir)
+    vitals_df = unify_vital_names(vitals_df)
     vitals_df = split_sbp_and_dbp(vitals_df)
 
     # drop duplicates for the same patient for the same vital (taken at same time indicates duplicate)
@@ -93,21 +94,30 @@ def load_vitals(
     return vitals_feature
 
 
+def unify_vital_names(vitals_df: DataFrame) -> DataFrame:
+    """Refer to `notebooks/matching_vital_names.ipynb`"""
+    # TODO: match case sensitivity? all to caps? all to lower?
+    mapping = {
+        "Temp": "Temperature",
+        "BMI (Calculated)": "BMI",
+        "R BMI": "BMI",
+        "WEIGHT/SCALE": "Weight",
+        "BP": "SBP/DBP",
+        "BLOOD PRESSURE": "SBP/DBP",
+        "Resp": "Respirations",
+        "PULSE OXIMETRY": "SpO2",
+    }
+    return vitals_df.replace({"VITAL_SIGN_TYPE": mapping})
+
+
 def split_sbp_and_dbp(vitals_df: DataFrame) -> DataFrame:
     # Split BP into SBP and DBP
-    vitals_df["VITAL_SIGN_TYPE"].replace(
-        {"BP": "SBP/DBP", "BLOOD PRESSURE": "SBP/DBP"}, inplace=True
-    )
     explode_cols = ["VITAL_SIGN_VALUE", "VITAL_SIGN_TYPE"]
 
     # Ref: https://stackoverflow.com/a/57122617/1888794
-    # don't explode the columsn you set index to, explode the rest via apply, reset everything to normal
-    vitals_df = (
-        vitals_df.set_index(list(vitals_df.columns.difference(explode_cols)))
-        .apply(lambda col: col.str.split("/").explode())
-        .reset_index()
-        .reindex(vitals_df.columns, axis=1)
-    )
+    vitals_df = vitals_df.apply(
+        lambda col: col.str.split("/") if col.name in explode_cols else col
+    ).explode(explode_cols)
     return vitals_df
 
 
