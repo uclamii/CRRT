@@ -133,16 +133,17 @@ def read_files_and_combine(
     dfs = []
 
     for file in files:
+        path = os.path.join(raw_data_dir, file)
         try:
             # Try normally reading the csv with pandas, if it fails the formatting is strange
-            df = read_csv(os.path.join(raw_data_dir, file))
+            df = read_csv(path)
         except ParserError as e:
             logging.warn(e)
             logging.warn("Skipping bad lines...")
-            df = read_csv(os.path.join(raw_data_dir, file), on_bad_lines="skip")
+            df = read_csv(path, on_bad_lines="skip")
         except Exception:
             logging.warning(f"Unexpected encoding in {file}. Encoding with cp1252.")
-            df = read_csv(os.path.join(raw_data_dir, file), encoding="cp1252")
+            df = read_csv(path, encoding="cp1252")
 
         # Enforce all caps column names
         dfs.append(df.set_axis(df.columns.str.upper(), axis=1))
