@@ -19,7 +19,7 @@ from data.base_loaders import AbstractCRRTDataModule, DataLabelTuple
 from data.utils import Preselected, SelectThreshold, f_pearsonr
 
 ADDITIONAL_CATEGORICAL_COLS = [
-    "Surgery in Past Week",
+    "surgery_indicator",
     "liver_pt_indicator",
     "heart_pt_indicator",
     "infection_pt_indicator",
