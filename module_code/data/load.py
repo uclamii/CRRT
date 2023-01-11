@@ -183,6 +183,7 @@ def merge_features_with_outcome(
     post_start_delta: Optional[Dict[str, int]] = None,
     time_window_end: str = "Start Date",
     slide_window_by: int = 0,
+    preloaded_dfs: Optional[Dict[str, DataFrame]] = {},
 ) -> DataFrame:
     """
     Loads outcomes and features and then merges them.
@@ -198,21 +199,43 @@ def merge_features_with_outcome(
         merge_on.append(UNIVERSAL_TIME_COL_NAME)
 
     longitudinal_dfs = [
-        load_diagnoses(
-            raw_data_dir,
-            time_interval=time_interval,
-            time_window=time_window,
+        preloaded_dfs.get(
+            "dx",
+            load_diagnoses(
+                raw_data_dir,
+                time_interval=time_interval,
+                time_window=time_window,
+            ),
         ),
-        load_vitals(raw_data_dir, time_interval=time_interval, time_window=time_window),
-        load_medications(
-            raw_data_dir, time_interval=time_interval, time_window=time_window
+        preloaded_dfs.get(
+            "vitals",
+            load_vitals(
+                raw_data_dir, time_interval=time_interval, time_window=time_window
+            ),
         ),
-        load_labs(raw_data_dir, time_interval=time_interval, time_window=time_window),
-        load_problems(
-            raw_data_dir, time_interval=time_interval, time_window=time_window
+        preloaded_dfs.get(
+            "rx",
+            load_medications(
+                raw_data_dir, time_interval=time_interval, time_window=time_window
+            ),
         ),
-        load_procedures(
-            raw_data_dir, time_interval=time_interval, time_window=time_window
+        preloaded_dfs.get(
+            "labs",
+            load_labs(
+                raw_data_dir, time_interval=time_interval, time_window=time_window
+            ),
+        ),
+        preloaded_dfs.get(
+            "pr",
+            load_problems(
+                raw_data_dir, time_interval=time_interval, time_window=time_window
+            ),
+        ),
+        preloaded_dfs.get(
+            "cpt",
+            load_procedures(
+                raw_data_dir, time_interval=time_interval, time_window=time_window
+            ),
         ),
     ]
 
