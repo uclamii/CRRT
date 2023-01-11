@@ -1,4 +1,5 @@
 import logging
+from os.path import isfile, join
 from typing import Optional, Union
 from pandas import DataFrame, to_numeric
 from hcuppy.ccs import CCSEngine
@@ -95,8 +96,8 @@ def load_vitals(
 
 
 def unify_vital_names(vitals_df: DataFrame) -> DataFrame:
-    """Refer to `notebooks/matching_vital_names.ipynb`"""
-    # TODO: match case sensitivity? all to caps? all to lower?
+    """Refer to `notebooks/align_crrt_and_ctrl.ipynb`"""
+    # TODO: match case sensitivity of vital names between controls and crrt? all to caps? all to lower?
     mapping = {
         "Temp": "Temperature",
         "BMI (Calculated)": "BMI",
@@ -137,6 +138,7 @@ def load_medications(
     """
     loading_message("Medications")
     rx_df = read_files_and_combine([rx_file], raw_data_dir)
+    rx_df = rx_df.rename({"MEDISPAN_SUBCLASS_NAME": "PHARM_SUBCLASS"}, axis=1)
     rx_feature = aggregate_cat_feature(
         rx_df,
         agg_on="PHARM_SUBCLASS",
@@ -155,6 +157,7 @@ def load_labs(
 ) -> DataFrame:
     loading_message("Labs")
     labs_df = read_files_and_combine([labs_file], raw_data_dir)
+    labs_df = labs_df.rename({"RESULT": "RESULTS"}, axis=1)
     # Force numeric, ignore strings
     labs_df["RESULTS"] = to_numeric(labs_df["RESULTS"], errors="coerce")
 
@@ -180,9 +183,14 @@ def load_problems(
     time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     loading_message("Problems")
-    problems_df = read_files_and_combine(
-        [problems_dx_file, problems_file], raw_data_dir
-    )
+    # Control data doesn't have the dx_file. Only keep the files that exist.
+    files = [
+        file
+        for file in [problems_dx_file, problems_file]
+        if isfile(join(raw_data_dir, file))
+    ]  # But we need to be sure that at least one exists
+    assert len(files) > 0, "No problems files found."
+    problems_df = read_files_and_combine(files, raw_data_dir)
     problems_df.columns = [col.upper() for col in problems_df.columns]
 
     # convert icd10 to ccs only to active problems
@@ -227,6 +235,9 @@ def load_procedures(
 ) -> DataFrame:
     loading_message("Procedures")
     procedures_df = read_files_and_combine([procedures_file], raw_data_dir)
+    procedures_df = procedures_df.rename(
+        {"PROCEDURE_CODE": "PROC_CODE", "PROCEDURE_DATE": "PROC_DATE"}, axis=1
+    )
 
     # Convert CPT codes to their sections (less granular)
     cpt = CPT()
