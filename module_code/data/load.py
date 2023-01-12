@@ -81,6 +81,9 @@ def load_outcomes(
     # Drop missing pt ids
     outcomes_df = outcomes_df.dropna(subset=["IP_PATIENT_ID"])
 
+    # Get rid of Age feature that I constructed since controls don't have outcomes file
+    outcomes_df.drop("Age", axis=1)
+
     #### Construct Binary Outcome ####
     # Recommend CRRT if they had a positive outcome.
     recommend_crrt = (outcomes_df[positive_outcomes] == 1).any(axis=1)
@@ -103,44 +106,56 @@ def load_outcomes(
 def load_static_features(
     raw_data_dir: str,
     static_features: List[str] = (
-        "Allergies.txt",
+        # "Allergies.txt",  # Very sparse for CRRT patients.
         "Patient_Demographics.txt",
-        "Social_History.txt",
+        # "Social_History.txt",
     ),
 ) -> DataFrame:
     loading_message("Static Features")
-    """Returns static features dataframe. 1 row per patient."""
+    """
+    Returns static features dataframe. 1 row per patient.
+    only onehot encode multicategorical columns (not binary)
+    all binary vars are encoded 0/1 (no/yes)
+    """
     # include all patients from all tables, so outer join
     static_df = read_files_and_combine(static_features, raw_data_dir, how="outer")
-    static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
-    allergen_code_mapping_fname = join(raw_data_dir, "allergen_code_mapping.csv")
-    if not Path(allergen_code_mapping_fname).exists():
-        # save description of allergen code as a df mapping
-        allergen_code_to_description_mapping = static_df[
-            ["ALLERGEN_ID", "DESCRIPTION"]
-        ].set_index("ALLERGEN_ID")
-        allergen_code_to_description_mapping.to_csv(allergen_code_mapping_fname)
-        # drop allergen description since we won't be using it
-    static_df.drop("DESCRIPTION", axis=1)
+    cols_to_onehot = []
+    if "Allergies.txt" in static_features:
+        allergen_code_mapping_fname = join(raw_data_dir, "allergen_code_mapping.csv")
+        if not Path(allergen_code_mapping_fname).exists():
+            # save description of allergen code as a df mapping
+            allergen_code_to_description_mapping = static_df[
+                ["ALLERGEN_ID", "DESCRIPTION"]
+            ].set_index("ALLERGEN_ID")
+            allergen_code_to_description_mapping.to_csv(allergen_code_mapping_fname)
+            # drop allergen description since we won't be using it
+        static_df.drop("DESCRIPTION", axis=1)
 
-    # only onehot encode multicategorical columns (not binary)
-    # all binary vars are encoded 0/1 (no/yes)
-    cols_to_onehot = [
-        "ALLERGEN_ID",
-        # TODO: we should pick only one: race or ethnicity, but not both. maybe do this as a precursor step to prediction but not as the preprocess pipeline
-        "RACE",
-        "ETHNICITY",
-        "PCP_PROVIDER_TYPE",
-        "TOBACCO_USER",
-        "SMOKING_TOB_STATUS",
-    ]
+        cols_to_onehot.append("ALLERGEN_ID")
+
+    if "Patient_Demographics.txt" in static_features:
+        static_df = map_provider_id_to_type(static_df, raw_data_dir)
+
+        # explicitly mapping here instead of numerical encoding automatically so that you know which is which when referencing outputs/data/etc.
+        bin_cols_mapping = {
+            "GENDER": {"Male": 0, "Female": 1},
+            "VITAL_STATUS": {"Not Known Deceased": 0, "Not Known Deceased": 1},
+        }
+        static_df.replace(bin_cols_mapping)
+
+        cols_to_onehot += [
+            "RACE",  # white, other, multiple races, etc.
+            "ETHNICITY",  # yes/no hispanic/latino
+            "PCP_PROVIDER_TYPE",
+        ]
+
+    if "Social_History.txt" in static_features:
+        cols_to_onehot += ["TOBACCO_USER", "SMOKING_TOB_STATUS"]
+
     # will aggregate if there's more than one entry per pateint.
     # this should only affect allergens, the other entries should not be affected
     static_df = onehot(static_df, cols_to_onehot, sum_across_patient=True)
-
-    # Get rid of age, we will use the age constructed in outcomes
-    static_df.drop("AGE", axis=1)
 
     return static_df
 
@@ -160,18 +175,6 @@ def map_provider_id_to_type(
     )
     static_df.rename(columns={"PCP_IP_PROVIDER_ID": "PCP_PROVIDER_TYPE"}, inplace=True)
     return static_df
-
-
-def merge_longitudinal_with_static_feaures(
-    longitudinal_features: DataFrame,
-    static_features: DataFrame,
-    how: str = "outer",
-) -> DataFrame:
-    """
-    Outer join: patients with no longitudinal data will stil be included.
-    Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
-    """
-    return longitudinal_features.join(static_features, how=how)
 
 
 def merge_features_with_outcome(
@@ -243,8 +246,6 @@ def merge_features_with_outcome(
     features = reduce(
         lambda df1, df2: merge(df1, df2, on=merge_on, how="outer"), longitudinal_dfs
     )
-    # NOTE: this will be serialized separately instead
-    # features = merge_longitudinal_with_static_feaures(features, load_static_features(raw_data_dir), how="outer")
 
     # inner join features with outcomes (only patients with outcomes)
     # merge is incorrect here for the same reason as static
@@ -313,5 +314,14 @@ def load_data(args: Namespace) -> DataFrame:
         df = deserialize_fn(preprocessed_df_path)
     except IOError:
         df = process_and_serialize_raw_data(args, preprocessed_df_path)
+
+    if args.model_type == "static":
+        # TODO[LOW]: for now loading static data will be adhoc so i dont have to reserialize everything over and over again.
+        """
+        Outer join: patients with no longitudinal data will stil be included.
+        Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
+        """
+        static_features = load_static_features(args.raw_data_dir)
+        features = features.join(static_features, how="outer")
 
     return preprocess_data(df, args)
