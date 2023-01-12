@@ -55,9 +55,9 @@ if __name__ == "__main__":
     controls_window_size = args.pre_start_delta
 
     slide_window_by = f"+{args.slide_window_by}" if args.slide_window_by else ""
-    path = f"df_controls_{time_delta_to_str(controls_window_size)}{slide_window_by}.{args.serialization}"
+    fname = f"df_controls_{time_delta_to_str(controls_window_size)}{slide_window_by}.{args.serialization}"
 
-    info(f"Creating preprocessed file {path}...")
+    info(f"Creating preprocessed file {fname}...")
     start = timer()
     merge_on = ["IP_PATIENT_ID", "Start Date"]
 
@@ -76,4 +76,4 @@ if __name__ == "__main__":
     info(f"Took {timer() - start} seconds.")
 
     serialize_fn = getattr(df, f"to_{args.serialization}")
-    serialize_fn(path)
+    serialize_fn(join(args.raw_data_dir, fname))
