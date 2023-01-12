@@ -322,6 +322,6 @@ def load_data(args: Namespace) -> DataFrame:
         Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
         """
         static_features = load_static_features(args.raw_data_dir)
-        features = features.join(static_features, how="outer")
+        features = features.join(static_features, how="inner")
 
     return preprocess_data(df, args)
