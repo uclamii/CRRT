@@ -305,7 +305,7 @@ class CRRTDynamicPredictor(BaseSklearnPredictor):
     def from_argparse_args(
         cls, args: Union[Namespace, ArgumentParser], **kwargs
     ) -> "CRRTDynamicPredictor":
-        return super().from_argparse_args(LongitudinalModel, args, **kwargs)
+        return super().from_argparse_args(args, [LongitudinalModel], **kwargs)
 
     def load_model(self, serialized_model_path: str) -> None:
         """Loads the underlying autoencoder state dict from path."""

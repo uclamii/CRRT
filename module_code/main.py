@@ -13,7 +13,7 @@ from exp.static_learning import static_learning
 from exp.ctn_learning import continuous_learning
 from exp.utils import get_optuna_grid, time_delta_str_to_dict
 from models.static_models import ALG_MAP, STATIC_MODEL_FNAME
-from utils import load_cli_args, init_cli_args
+from cli_utils import load_cli_args, init_cli_args
 
 
 def run_experiment(args: Namespace, trials=None):

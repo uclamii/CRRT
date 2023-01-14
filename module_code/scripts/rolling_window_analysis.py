@@ -7,7 +7,7 @@ from os.path import join
 sys.path.insert(0, join(getcwd(), "module_code"))
 
 from data.longitudinal_utils import get_delta
-from utils import load_cli_args, init_cli_args
+from cli_utils import load_cli_args, init_cli_args
 from main import main
 
 MAX_SLIDE = 7

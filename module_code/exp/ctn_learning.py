@@ -6,7 +6,7 @@ import pandas as pd
 
 
 def continuous_learning(df: pd.DataFrame, args: Namespace):
-    data = TorchCRRTDataModule.from_argparse_args(df, args)
+    data = TorchCRRTDataModule.from_argparse_args(args, preprocessed_df=df)
     data.setup()
     model = CRRTDynamicPredictor.from_argparse_args(args, nfeatures=data.nfeatures)
     model.fit(data)

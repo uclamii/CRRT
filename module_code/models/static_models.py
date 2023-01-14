@@ -296,7 +296,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     def from_argparse_args(
         cls, args: Union[Namespace, ArgumentParser], **kwargs
     ) -> "CRRTStaticPredictor":
-        return super().from_argparse_args(StaticModel, args, **kwargs)
+        return super().from_argparse_args(args, [StaticModel], **kwargs)
 
     def log_model(self):
         self.static_model.log_model()

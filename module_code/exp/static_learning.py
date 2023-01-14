@@ -39,7 +39,9 @@ def static_learning(df: pd.DataFrame, args: Namespace):
             & (df["liver_pt_indicator"] == 0)
         ),
     }
-    data = SklearnCRRTDataModule.from_argparse_args(df, args, filters=filters)
+    data = SklearnCRRTDataModule.from_argparse_args(
+        args, preprocessed_df=df, filters=filters
+    )
 
     # Pass the original datasets split pt_ids if doing rolling window analysis
     if args.slide_window_by:

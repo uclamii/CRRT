@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, join(getcwd(), "module_code"))
 
-from utils import load_cli_args, init_cli_args
+from cli_utils import load_cli_args, init_cli_args
 from data.load import (
     process_and_serialize_raw_data,
     get_preprocessed_df_path,

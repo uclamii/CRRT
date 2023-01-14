@@ -11,7 +11,7 @@ from pandas import DataFrame, DatetimeIndex, merge
 
 sys.path.insert(0, join(getcwd(), "module_code"))
 
-from utils import load_cli_args, init_cli_args
+from cli_utils import load_cli_args, init_cli_args
 from data.longitudinal_features import load_procedures
 from data.load import merge_features_with_outcome
 from data.utils import time_delta_to_str
