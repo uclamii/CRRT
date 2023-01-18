@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 from abc import ABC, abstractmethod
 from sklearn.base import TransformerMixin, BaseEstimator
 
-from cli_utils import CLIInitialized
+from data.base_loaders import CLIInitialized
 
 
 class AbstractModel(ABC):

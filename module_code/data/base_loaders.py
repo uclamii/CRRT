@@ -1,14 +1,47 @@
 from argparse import ArgumentParser, Namespace
 import inspect
-from typing import Callable, Optional, Tuple, Union
+from typing import Callable, Optional, Tuple, Union, List
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 
-from cli_utils import CLIInitialized
-
 # X, y
 DataLabelTuple = Tuple[pd.DataFrame, pd.Series]
+
+
+class CLIInitialized:
+    @classmethod
+    def from_argparse_args(
+        cls,
+        args: Union[Namespace, ArgumentParser],
+        inner_classes: List = None,
+        **kwargs,
+    ):
+        """
+        Create an instance from CLI arguments.
+        **kwargs: Additional keyword arguments that may override ones in the parser or namespace.
+        If there are inner classes to instantiate and you need their signature, you can overload this method and pass a list of classes:
+            e.g. return super().from_argparse_args(cls, args, [AEDitto], **kwargs)
+        # Ref: https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.8.3/pytorch_lightning/trainer/trainer.py#L750
+        """
+        if isinstance(args, ArgumentParser):
+            args = cls.parse_argparser(args)
+        params = vars(args)
+
+        # we only want to pass in valid args, the rest may be user specific
+        # returns a immutable dict MappingProxyType, want to combine so copy
+        valid_kwargs = inspect.signature(cls.__init__).parameters.copy()
+        if inner_classes is not None:
+            for inner_class in inner_classes:  # Update with inner classes
+                valid_kwargs.update(
+                    inspect.signature(inner_class.__init__).parameters.copy()
+                )
+        data_kwargs = dict(
+            (name, params[name]) for name in valid_kwargs if name in params
+        )
+        data_kwargs.update(**kwargs)
+
+        return cls(**data_kwargs)
 
 
 class AbstractCRRTDataModule(ABC, CLIInitialized):
