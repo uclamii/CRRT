@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from lib2to3.pgen2.token import OP
 from typing import Callable, Dict, List, Optional, Tuple, Union
 import pandas as pd
@@ -17,6 +17,7 @@ from sklearn.feature_selection import SelectKBest
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
 from data.base_loaders import AbstractCRRTDataModule, DataLabelTuple
 from data.utils import Preselected, SelectThreshold, f_pearsonr
+from data.load import load_data
 
 ADDITIONAL_CATEGORICAL_COLS = [
     "surgery_indicator",
@@ -29,12 +30,14 @@ ADDITIONAL_CATEGORICAL_COLS = [
 class SklearnCRRTDataModule(AbstractCRRTDataModule):
     def __init__(
         self,
-        preprocessed_df: pd.DataFrame,
         seed: int,
         outcome_col_name: str,
-        test_split_size: float,
+        train_val_cohort: str,
+        eval_cohort: str,
         # val comes from train := (1 - test_split_size) * val_split_size
         val_split_size: float,
+        # not necessary if eval_cohort != train_val_cohort.
+        test_split_size: float = None,
         kbest: int = None,
         corr_thresh: float = None,
         impute_method: str = "simple",
@@ -42,13 +45,15 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
     ):
         super().__init__()
         self.seed = seed
-        self.preprocessed_df = preprocessed_df
+        self.train_val_cohort = train_val_cohort
+        self.eval_cohort = eval_cohort
         self.outcome_col_name = outcome_col_name
+        if test_split_size is None:
+            assert (
+                self.eval_cohort != self.train_val_cohort
+            ), "You must specify a test_split_size is if the eval_cohort is the same as train_val_cohort."
         self.test_split_size = test_split_size
         self.val_split_size = val_split_size
-        self.categorical_columns = preprocessed_df.filter(
-            regex=CATEGORICAL_COL_REGEX, axis=1
-        ).columns.union(ADDITIONAL_CATEGORICAL_COLS)
         self.kbest = kbest
         self.corr_thresh = corr_thresh
         self.filters = filters
@@ -61,6 +66,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
 
     def setup(
         self,
+        args: Namespace,
         stage: Optional[str] = None,
         reference_ids: Optional[Dict[str, pd.Index]] = None,
         reference_cols: Optional[Union[List[str], pd.Index]] = None,
@@ -69,35 +75,30 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         """
         Ops performed across GPUs. e.g. splits, transforms, etc.
         """
-        X, y = (
-            self.preprocessed_df.drop(self.outcome_col_name, axis=1),
-            self.preprocessed_df[self.outcome_col_name],
+        X, y = self.load_data_and_additional_preproc(
+            args, self.train_val_cohort, reference_cols
         )
+
+        #### Columns ####
+        # Needs to come after reference cols are potentially set
+        # need to save this before feature selection for sliding window analysis
         self.columns = X.columns
+        self.categorical_columns = X.filter(
+            regex=CATEGORICAL_COL_REGEX, axis=1
+        ).columns.union(ADDITIONAL_CATEGORICAL_COLS)
         # set this here instead of init so that outcome col isn't included
         self.ctn_columns = X.columns.difference(self.categorical_columns)
+
         # its the same for all the sequences, just take one
         # y = y.groupby("IP_PATIENT_ID").last()
 
-        # remove unwanted columns, esp non-numeric ones, before pad and pack
-        X = X.select_dtypes(["number"])
-
-        # add reference cols if not none
-        if reference_cols is not None:
-            # make sure columns in original exist here (but they're all missing)
-            # the missing values will be simple imputed (ctn) and 0 imputed (nan)
-            # by the serialized transform function
-            # ref: https://stackoverflow.com/a/30943503/1888794
-            X = X.reindex(columns=reference_cols)
-            # drop cols in X but not in reference
-            X = X.drop(X.columns.difference(reference_cols), axis=1)
-
-        # TODO: this is wrong bc of feature selection
-        # self.nfeatures = X.shape[1]
-        # need to save this before feature selection for sliding window analysis
-        self.columns = X.columns
-
-        train_tuple, val_tuple, test_tuple = self.split_dataset(X, y, reference_ids)
+        split_args = [X, y, reference_ids]
+        if self.train_val_cohort != self.eval_cohort:
+            X_eval, y_eval = self.load_data_and_additional_preproc(
+                args, self.eval_cohort, reference_cols
+            )
+            split_args += [X_eval, y_eval]
+        train_tuple, val_tuple, test_tuple = self.split_dataset(*split_args)
 
         # Apply filters for subpopulation analysis later
         # MUST OCCUR BEFORE TRANSFORM (before feature selection)
@@ -120,6 +121,29 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.train = (self.data_transform(train_tuple[0]), train_tuple[1])
         self.val = (self.data_transform(val_tuple[0]), val_tuple[1])
         self.test = (self.data_transform(test_tuple[0]), test_tuple[1])
+
+    def load_data_and_additional_preproc(
+        self, args: Namespace, cohort: str, reference_cols=None
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        preprocessed_df = load_data(args, cohort)
+        X, y = (
+            preprocessed_df.drop(self.outcome_col_name, axis=1),
+            preprocessed_df[self.outcome_col_name],
+        )
+
+        # remove unwanted columns, esp non-numeric ones, before pad and pack
+        X = X.select_dtypes(["number"])
+
+        # add reference cols if not none
+        if reference_cols is not None:
+            # make sure columns in original exist here (but they're all missing)
+            # the missing values will be simple imputed (ctn) and 0 imputed (nan)
+            # by the serialized transform function
+            # ref: https://stackoverflow.com/a/30943503/1888794
+            X = X.reindex(columns=reference_cols)
+            # drop cols in X but not in reference
+            X = X.drop(X.columns.difference(reference_cols), axis=1)
+        return (X, y)
 
     def get_post_split_transform(
         self, train: DataLabelTuple, reference_cols_mask: Optional[List[bool]] = None
@@ -199,48 +223,73 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         X: pd.DataFrame,
         y: Union[pd.Series, np.ndarray],
         reference_ids: Optional[Dict[str, pd.Index]] = None,
+        X_eval: Optional[pd.DataFrame] = None,
+        y_eval: Optional[Union[pd.Series, np.ndarray]] = None,
     ) -> Tuple[DataLabelTuple, DataLabelTuple, DataLabelTuple]:
         """
         Splitting with stratification using sklearn.
         We then convert to Dataset so the Dataloaders can use that.
+
+        If train_val_cohort != eval_cohort then the whole test split will be from the test_cohort loaded data.
+        Reference IDs will be from there as well.
         """
+        separate_eval_dataset = X_eval is not None and y_eval is not None
         # sample = [pt, treatment]
         # TODO: ensure patient is in same split
         # ensure data is split by patient
-        sample_ids = X.index.droplevel(["Start Date"]).unique().values
-        labels = y.groupby("IP_PATIENT_ID").first()
+        sample_ids = {"train_val": X.index.droplevel(["Start Date"]).unique().values}
+        train_val_labels = y.groupby("IP_PATIENT_ID").first()
+        if separate_eval_dataset:
+            sample_ids["eval"] = X_eval.index.droplevel(["Start Date"]).unique().values
 
         if reference_ids is not None:  # filter id to the serialized ones
             # There are patients we don't want include:
             # there may be fewer patients in this dataset (D_{+i}) than original because they don't have enough data after the sliding window
             # or there may be extraneous ones that wouldn't have enough data for the window without a slide, but now do, that we don't want to include
             # Solve this by inner joining
-            train_ids = reference_ids["train"].join(sample_ids, how="inner")
-            val_ids = reference_ids["val"].join(sample_ids, how="inner")
-            test_ids = reference_ids["test"].join(sample_ids, how="inner")
+            train_ids = reference_ids["train"].join(
+                sample_ids["train_val"], how="inner"
+            )
+            val_ids = reference_ids["val"].join(sample_ids["train_val"], how="inner")
+            # test_ids will separately come from eval_cohort if it was different
+            test_ids_key = "train_val" if not separate_eval_dataset else "eval"
+            test_ids = reference_ids["test"].join(sample_ids[test_ids_key], how="inner")
         else:
             # patient_ids = X.index.unique("IP_PATIENT_ID").values
-            train_val_ids, test_ids = train_test_split(
-                sample_ids,
-                test_size=self.test_split_size,
-                stratify=labels,
-                random_state=self.seed,
-            )
+            if not separate_eval_dataset:  # need to split twice
+                train_val_ids, test_ids = train_test_split(
+                    sample_ids["train_val"],
+                    test_size=self.test_split_size,
+                    stratify=train_val_labels,
+                    random_state=self.seed,
+                )
+            else:
+                # split train_val into train and val, and take all of eval to be test
+                train_val_ids = sample_ids["train_val"]
+                test_ids = sample_ids["eval"]
+
             train_ids, val_ids = train_test_split(
                 train_val_ids,
                 test_size=self.val_split_size,
-                stratify=labels[train_val_ids],
+                stratify=train_val_labels[train_val_ids],
                 random_state=self.seed,
             )
 
-            # In order to serialize splits for rolling window analysis
-            self.split_pt_ids = {"train": train_ids, "val": val_ids, "test": test_ids}
+        # In order to serialize splits for rolling window analysis
+        self.split_pt_ids = {"train": train_ids, "val": val_ids, "test": test_ids}
 
         # return (X,y) pair, where X is a List of pd dataframes for each pt
         # this is so the dimensions match when we zip them into a pytorch dataset
         # Note that like this, we will end up with a set size larger than we expect
         # Because we stratify by ID and certain patients may have more treatments than others.
-        return ((X.loc[ids], y[ids]) for ids in (train_ids, val_ids, test_ids))
+        if not separate_eval_dataset:  # pull all data from the same cohort
+            return ((X.loc[ids], y[ids]) for ids in (train_ids, val_ids, test_ids))
+        # otherwise pull test split from the eval cohort separately
+        return (
+            (X.loc[train_ids], y[train_ids]),
+            (X.loc[val_ids], y[val_ids]),
+            (X_eval.loc[test_ids], y_eval[test_ids]),
+        )
 
     @staticmethod
     # def add_data_args(parent_parsers: List[ArgumentParser]) -> ArgumentParser:
@@ -281,5 +330,17 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             default="simple",
             choices=["simple", "knn"],
             help="Which impute_method method is desired.",
+        )
+        p.add_argument(
+            "--train-val-cohort",
+            type=str,
+            choices=["ucla_crrt", "ucla_control", "ucla_crrt+control", "cedars_crrt"],
+            help="Name of cohort/dataset to use for training and validation.",
+        )
+        p.add_argument(
+            "--eval-cohort",
+            type=str,
+            choices=["ucla_crrt", "ucla_control", "ucla_crrt+control", "cedars_crrt"],
+            help="Name of cohort/dataset to use for evaluation.",
         )
         return p

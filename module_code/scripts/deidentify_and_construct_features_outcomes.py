@@ -9,10 +9,10 @@ MAPPING_FILE = "Patient_Identifiers.txt"
 
 
 def main(args: Namespace):
-    mapping_df = pd.read_csv(join(args.raw_data_dir, MAPPING_FILE))
+    mapping_df = pd.read_csv(join(args.data_dir, MAPPING_FILE))
     mapping = dict(zip(mapping_df["MRN"], mapping_df["IP_PATIENT_ID"]))
 
-    unmapped = pd.read_excel(join(args.raw_data_dir, args.file_to_map), sheet_name=None)
+    unmapped = pd.read_excel(join(args.data_dir, args.file_to_map), sheet_name=None)
     for sheetname, df in unmapped.items():
         mrn_col = "Medical record number"
         if mrn_col not in df.columns:
@@ -44,7 +44,7 @@ def main(args: Namespace):
         #### Get rid of "Unnamed" Column in Excel ####
         df = df.drop(df.columns[df.columns.str.contains("^Unnamed")], axis=1)
 
-    with pd.ExcelWriter(join(args.raw_data_dir, args.deidentified_file)) as writer:
+    with pd.ExcelWriter(join(args.data_dir, args.deidentified_file)) as writer:
         for sheetname, df in unmapped.items():
             df.to_excel(writer, index=False, sheet_name=sheetname)
 
@@ -52,6 +52,7 @@ def main(args: Namespace):
 if __name__ == "__main__":
     load_cli_args()
     p = ArgumentParser()
+    p.add_argument("--data-dir", type=str, help="Excel file to deidentify.")
     p.add_argument("--file-to-map", type=str, help="Excel file to deidentify.")
     p.add_argument("--deidentified-file", type=str, help="Output file name.")
     p.add_argument("--raw-data-dir", type=str, help="Root directory of data files.")

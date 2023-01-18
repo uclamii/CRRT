@@ -3,8 +3,7 @@ from functools import reduce
 import logging
 from os.path import join
 from pathlib import Path
-import sys
-import time
+from timeit import default_timer as timer
 from typing import Dict, List, Optional
 from pandas import DataFrame, DatetimeIndex, read_excel, read_csv, merge
 
@@ -28,7 +27,7 @@ from data.utils import (
     read_files_and_combine,
     get_preprocessed_file_name,
 )
-from data.preprocess import preprocess_data
+from data.preprocess import adhoc_preprocess_data
 
 
 def get_num_prev_crrt_treatments(df: DataFrame):
@@ -101,6 +100,38 @@ def load_outcomes(
     return outcomes_df.merge(
         num_prev_crrt_treatments, how="inner", on=group_by
     ).set_index(group_by)
+
+
+def construct_outcomes(procedures_df: DataFrame, merge_on: List[str]) -> DataFrame:
+    """
+    For control cohort that doesn't have outcomes.
+    Instead of CRRT start date we use a basic heuristic for a "anchoring" date / pseudo start date for time windows
+    # In controls this is 4725 patients
+    """
+    outcomes = (
+        procedures_df.groupby("IP_PATIENT_ID")
+        # We randomly select the date of a procedure for any patient
+        .sample(n=1)[["IP_PATIENT_ID", "PROC_DATE"]]
+        # Ensure date is a datetime object
+        .astype({"PROC_DATE": "datetime64[ns]"}).assign(
+            **{
+                # they should not go on crrt and did not
+                "recommend_crrt": 0,
+                # because they never went on crrt theres 0 days and no prev treatments
+                "Days on CRRT": 0,
+                "Num Prev CRRT Treatments": 0,
+                # TODO: does it make sense to have this anymore?
+                # crrt_year=lambda row: DatetimeIndex(row["PROCEDURE_DATE"]).year,
+                "CRRT Year": lambda df: df["PROC_DATE"].map(lambda dt: dt.year),
+                # need this for get_time_window_mask, will not be used
+                "End Date": lambda df: df["PROC_DATE"],
+            }
+        )
+        # Align column names to a real outcomes file
+        .rename(columns={"PROC_DATE": "Start Date"})
+    )
+
+    return outcomes.set_index(merge_on)
 
 
 def load_static_features(
@@ -258,41 +289,22 @@ def merge_features_with_outcome(
 
 
 def process_and_serialize_raw_data(
-    args: Namespace, preprocessed_df_path: str
+    args: Namespace, preprocessed_df_path: str, cohort: str
 ) -> DataFrame:
-    # Keep a log of how preprocessing went. can call logger anywhere inside of logic from here
-    # logging.basicConfig(
-    #     level=logging.DEBUG,
-    #     format="%(asctime)s [%(levelname)s] %(message)s",
-    #     # print to stdout and log to file
-    #     handlers=[
-    #         # logging.FileHandler("dialysis_preproc.log"),
-    #         logging.StreamHandler(sys.stdout),
-    #     ],
-    # )
     logging.info(
         f"Preprocessed file {preprocessed_df_path} does not exist! Creating..."
     )
     merge_on = ["IP_PATIENT_ID", "Start Date"]
-    outcomes_df = load_outcomes(args.raw_data_dir, group_by=merge_on)
-    start_time = time.time()
-    df = merge_features_with_outcome(
-        args.raw_data_dir,
-        outcomes_df,
-        merge_on,
-        args.time_interval,
-        args.pre_start_delta,
-        args.post_start_delta,
-        args.time_window_end,
-        args.slide_window_by,
-    )  # 140s ~2.5 mins, 376.5s ~6mins for daily aggregation
-    logging.info(f"Loading took {time.time() - start_time} seconds.")
+    start = timer()
+    # Dynamically get the correct function in this module based on the cohort
+    df = globals().get(f"preproc_{cohort}")(args, merge_on)
+    logging.info(f"Loading took {timer() - start} seconds.")
     serialize_fn = getattr(df, f"to_{args.serialization}")
     serialize_fn(preprocessed_df_path)
     return df
 
 
-def get_preprocessed_df_path(args: Namespace) -> str:
+def get_preprocessed_df_path(args: Namespace, cohort: str) -> str:
     preprocessed_df_fname = get_preprocessed_file_name(
         args.pre_start_delta,
         args.post_start_delta,
@@ -302,18 +314,17 @@ def get_preprocessed_df_path(args: Namespace) -> str:
         args.preprocessed_df_file,
         args.serialization,
     )
-    preprocessed_df_path = join(args.raw_data_dir, preprocessed_df_fname)
-    return preprocessed_df_path
+    return join(getattr(args, f"{cohort}_data_dir"), preprocessed_df_fname)
 
 
-def load_data(args: Namespace) -> DataFrame:
-    preprocessed_df_path = get_preprocessed_df_path(args)
+def load_data(args: Namespace, cohort: str = None) -> DataFrame:
+    preprocessed_df_path = get_preprocessed_df_path(args, cohort)
     try:
         deserialize_fn = getattr(serialize_pkg, f"read_{args.serialization}")
         # raise IOError
         df = deserialize_fn(preprocessed_df_path)
     except IOError:
-        df = process_and_serialize_raw_data(args, preprocessed_df_path)
+        df = process_and_serialize_raw_data(args, preprocessed_df_path, cohort)
 
     if args.model_type == "static":
         # TODO[LOW]: for now loading static data will be adhoc so i dont have to reserialize everything over and over again.
@@ -321,7 +332,49 @@ def load_data(args: Namespace) -> DataFrame:
         Outer join: patients with no longitudinal data will stil be included.
         Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
         """
-        static_features = load_static_features(args.raw_data_dir)
+        cohort_data_dir = getattr(args, f"{cohort}_data_dir")
+        static_features = load_static_features(cohort_data_dir)
         features = features.join(static_features, how="inner")
 
-    return preprocess_data(df, args)
+    return adhoc_preprocess_data(df, args)
+
+
+"""
+Functions for each cohort/dataset for preprocessing the raw datasets.
+Each much be "preproc_" followed by the cohort name.
+Cohort names can only have underscores so they're valid var names.
+"""
+
+
+def preproc_ucla_crrt(args: Namespace, merge_on: List[str]) -> DataFrame:
+    outcomes_df = load_outcomes(args.ucla_crrt_data_dir, group_by=merge_on)
+    return merge_features_with_outcome(
+        args.ucla_crrt_data_dir,
+        outcomes_df,
+        merge_on,
+        args.time_interval,
+        args.pre_start_delta,
+        args.post_start_delta,
+        args.time_window_end,
+        args.slide_window_by,
+    )  # 140s ~2.5 mins, 376.5s ~6mins for daily aggregation
+
+
+def preproc_ucla_control(args: Namespace, merge_on: List[str]) -> DataFrame:
+    procedures_df = load_procedures(args.ucla_control_data_dir, aggregate=False)
+    outcomes_df = construct_outcomes(procedures_df, merge_on)
+    controls_window_size = args.pre_start_delta
+    """
+    TODO[High]: this actually can match ucla_crrt by just using everythign from args, but we have to update construct_outcomes to also have "End Date"
+        This will be important for the dynamic model
+    """
+    return merge_features_with_outcome(
+        args.ucla_control_data_dir,
+        outcomes_df,
+        merge_on,
+        args.time_interval,
+        controls_window_size,
+        None,
+        "Start Date",
+        args.slide_window_by,
+    )
