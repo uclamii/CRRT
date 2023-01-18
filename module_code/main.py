@@ -7,7 +7,6 @@ from optuna import Study, create_study
 from optuna.trial import FrozenTrial
 from optuna.samplers import TPESampler
 
-from data.load import load_data
 from exp.cv import run_cv
 from exp.static_learning import static_learning
 from exp.ctn_learning import continuous_learning
@@ -25,9 +24,9 @@ def run_experiment(args: Namespace, trials=None):
         dargs = vars(args)
         dargs.update(params)
 
-    preprocessed_df = load_data(args)
+    # some require args and some don't
     experiment_name_to_function = {
-        "run_cv": {"fn": run_cv, "args": ()},
+        "run_cv": {"fn": run_cv, "args": (args,)},
         "static_learning": {"fn": static_learning, "args": (args,)},
         "ctn_learning": {"fn": continuous_learning, "args": (args,)},
     }
@@ -52,9 +51,9 @@ def run_experiment(args: Namespace, trials=None):
             # Log all cli args as tags
             mlflow.set_tags(vars(args))
             # run experiment
-            results_dict = experiment_function(preprocessed_df, *experiment_args)
+            results_dict = experiment_function(*experiment_args)
     else:
-        results_dict = experiment_function(preprocessed_df, *experiment_args)
+        results_dict = experiment_function(*experiment_args)
     if args.tune_n_trials:  # So Optuna can compare and pick best trial
         eval_split = "test" if args.stage == "eval" else "val"
         return results_dict[f"{args.modeln}_{eval_split}__{args.tune_metric}"]

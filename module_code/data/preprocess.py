@@ -4,7 +4,7 @@ import pandas as pd
 from data.utils import get_pt_type_indicators
 
 
-def preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
+def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
     """Pre-processes the data for use by ML model (Adhoc)."""
 
     # for sliding window analysis, we want to only keep patients with <= max_slide number of days on CRRT

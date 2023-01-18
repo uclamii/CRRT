@@ -27,7 +27,7 @@ def dump_artifacts_for_rolling_windows(
         cloudpickle.dump(data.data_transform, f)
 
 
-def static_learning(df: pd.DataFrame, args: Namespace):
+def static_learning(args: Namespace):
     # need to update CRRTDataModule
     filters = {
         "heart": lambda df: df["heart_pt_indicator"] == 1,
@@ -39,9 +39,7 @@ def static_learning(df: pd.DataFrame, args: Namespace):
             & (df["liver_pt_indicator"] == 0)
         ),
     }
-    data = SklearnCRRTDataModule.from_argparse_args(
-        args, preprocessed_df=df, filters=filters
-    )
+    data = SklearnCRRTDataModule.from_argparse_args(args, filters=filters)
 
     # Pass the original datasets split pt_ids if doing rolling window analysis
     if args.slide_window_by:
@@ -59,6 +57,7 @@ def static_learning(df: pd.DataFrame, args: Namespace):
         original_columns = None
         data_transform = None
     data.setup(
+        args,
         reference_ids=reference_ids,
         reference_cols=original_columns,
         data_transform=data_transform,

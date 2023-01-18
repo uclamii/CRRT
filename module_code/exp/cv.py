@@ -21,6 +21,7 @@ from sklearn.metrics import (
 from scipy.stats import pearsonr
 import numpy as np
 
+from data.load import load_data
 
 metrics = {
     "auroc": lambda gt, pred_probs, decision_thresh: roc_auc_score(gt, pred_probs),
@@ -69,12 +70,12 @@ algs = {
     "decision_tree": DecisionTreeClassifier,
     "random_forest": RandomForestClassifier,
     "lgb": LGBMClassifier,
-    "xgb": XGBClassifier
+    "xgb": XGBClassifier,
 }
 
 
 def run_cv(
-    input_df,
+    args,
     alg="logistic",
     corr_thresh=None,
     top_n_fts=None,
@@ -108,6 +109,8 @@ def run_cv(
     tuple
 
     """
+    input_df = load_data(args)
+
     # shuffle df
     input_df = shuffle(input_df, random_state=random_state)
 
@@ -123,7 +126,14 @@ def run_cv(
 
     # keep track of feature columns and real/cat feature columns (for filling in missing values based on train data)
     feature_cols = [col for col in cols if col not in [target_col, patient_id_col]]
-    real_cols = [col for col in cols if ("VITAL_SIGN" in col) or ("RESULT" in col) or ("CPT_SECTION" in col) or ("pr_CCS_COD" in col)]
+    real_cols = [
+        col
+        for col in cols
+        if ("VITAL_SIGN" in col)
+        or ("RESULT" in col)
+        or ("CPT_SECTION" in col)
+        or ("pr_CCS_COD" in col)
+    ]
     real_cols_indices = [i for i, col in enumerate(feature_cols) if col in real_cols]
     cat_cols_indices = [i for i, col in enumerate(feature_cols) if col not in real_cols]
 
@@ -206,15 +216,20 @@ def run_cv(
         feature_corrs = np.abs(feature_corrs)
         if isinstance(corr_thresh, float) and (0 <= corr_thresh < 1):
             feature_mask = feature_corrs >= corr_thresh
-            feature_names = [feature_name for feature_mask_val, feature_name in zip(feature_mask, feature_cols)
-                             if feature_mask_val]
+            feature_names = [
+                feature_name
+                for feature_mask_val, feature_name in zip(feature_mask, feature_cols)
+                if feature_mask_val
+            ]
             used_features.append(feature_names)
         elif isinstance(top_n_fts, int) and (top_n_fts > 0):
-            feature_mask = feature_corrs.argsort()[-1 * top_n_fts:]
+            feature_mask = feature_corrs.argsort()[-1 * top_n_fts :]
             feature_names = [feature_cols[i] for i in feature_mask]
             used_features.append(feature_names)
         else:
-            raise ValueError("You need to define a correlation threshold or number of features!")
+            raise ValueError(
+                "You need to define a correlation threshold or number of features!"
+            )
 
         X_train = X_train[:, feature_mask]
         X_test = X_test[:, feature_mask]
@@ -255,8 +270,10 @@ def run_cv(
         mean_metric_scores[metric + "_mean"] = np.round(np.mean(scores, axis=0), 4)
         std_metric_scores[metric + "_std"] = np.round(np.std(scores, axis=0), 4)
 
-    return {"fold_scores": metric_scores,
-            "mean_scores": mean_metric_scores,
-            "std_scores": std_metric_scores,
-            "fold_models": fold_models,
-            "fold_features": used_features}
+    return {
+        "fold_scores": metric_scores,
+        "mean_scores": mean_metric_scores,
+        "std_scores": std_metric_scores,
+        "fold_models": fold_models,
+        "fold_features": used_features,
+    }
