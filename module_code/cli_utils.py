@@ -28,9 +28,19 @@ def add_global_args(
         help="Name of method to run in experiments directory. Name must match exactly. Used to set experiment name in mlflow",
     )
     p.add_argument(
-        "--raw-data-dir",
+        "--data-dir",
         type=str,
-        help="Path to directory that contains the raw or unprocessed data files.",
+        help="Path to directory that contains the raw or unprocessed data files for one-off scripts.",
+    )
+    p.add_argument(
+        "--ucla-crrt-data-dir",
+        type=str,
+        help="Path to directory that contains the data table files for CRRT cohort at UCLA.",
+    )
+    p.add_argument(
+        "--ucla-control-data-dir",
+        type=str,
+        help="Path to directory that contains the data table files for control cohort at UCLA.",
     )
     p.add_argument(
         "--preprocessed-df-file",
