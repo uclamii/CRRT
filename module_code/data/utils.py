@@ -53,6 +53,7 @@ def get_preprocessed_file_name(
     """
     Uses preprocessed_df_file for file name for preprocessed dataframe.
     However, if it's not provided it will automatically generate a name based on the arguments used to generate the file.
+    The name will be the same for all cohorts because we assume each cohort is in a separate directory.
 
     df_{time interval the features are aggregated in}agg_[{time window start},{time window end}].extension
     If providing deltas: [startdate-pre_start_delta,startdate+post_start_delta]
