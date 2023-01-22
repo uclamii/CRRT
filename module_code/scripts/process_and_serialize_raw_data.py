@@ -14,8 +14,8 @@ from data.load import (
 def main():
     load_cli_args()
     args = init_cli_args()
-    cohort = ""
-    process_and_serialize_raw_data(args, get_preprocessed_df_path(args), cohort)
+    cohort = "ucla_crrt"
+    process_and_serialize_raw_data(args, get_preprocessed_df_path(args, cohort), cohort)
 
 
 if __name__ == "__main__":
