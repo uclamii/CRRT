@@ -166,14 +166,22 @@ def load_static_features(
         cols_to_onehot.append("ALLERGEN_ID")
 
     if "Patient_Demographics.txt" in static_features:
+        static_df = static_df.rename(
+            {
+                "GENDER": "SEX",
+                "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
+                "VITAL_STATUS": "KNOWN_DECEASED",
+            },
+            axis=1,
+        )
         static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
         # explicitly mapping here instead of numerical encoding automatically so that you know which is which when referencing outputs/data/etc.
         bin_cols_mapping = {
-            "GENDER": {"Male": 0, "Female": 1},
-            "VITAL_STATUS": {"Not Known Deceased": 0, "Not Known Deceased": 1},
+            "SEX": {"Male": 0, "Female": 1},
+            "KNOWN_DECEASED": {"Not Known Deceased": 0, "Known Deceased": 1},
         }
-        static_df.replace(bin_cols_mapping)
+        static_df = static_df.replace(bin_cols_mapping)
 
         cols_to_onehot += [
             "RACE",  # white, other, multiple races, etc.
@@ -186,7 +194,7 @@ def load_static_features(
 
     # will aggregate if there's more than one entry per pateint.
     # this should only affect allergens, the other entries should not be affected
-    static_df = onehot(static_df, cols_to_onehot, sum_across_patient=True)
+    static_df = onehot(static_df, cols_to_onehot, sum_across_patient=False)
 
     return static_df
 
@@ -197,7 +205,7 @@ def map_provider_id_to_type(
     provider_mapping_file: str = "Providers.txt",
 ) -> DataFrame:
     """There are a bunch of IDs but they mostly all map to the same type, so here we'll use the string name instead of code."""
-    provider_mapping = read_csv(join(raw_data_dir, provider_mapping_file))
+    provider_mapping = read_files_and_combine([provider_mapping_file], raw_data_dir)
     provider_mapping = dict(
         zip(provider_mapping["IP_PROVIDER_ID"], provider_mapping["PROVIDER_TYPE"])
     )
