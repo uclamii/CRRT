@@ -33,10 +33,11 @@ def load_diagnoses(
     # convert icd10 to ccs to reduce number of categories for diagnoses.
     ce = CCSEngine(mode="dx")
     # ICD9 is 2013-15. Outcomes are 2018-19, so we will ignore ICD9 codes for now.
+    # They will just show as NaNs.
     # NOTE: This needs to change if our time window gets very large and we extend into 2013-15.
-    icd10_mask = dx_df["ICD_TYPE"] == 10
+    # icd10_mask = dx_df["ICD_TYPE"] == 10
     dx_df = hcuppy_map_code(
-        dx_df[icd10_mask],
+        dx_df,
         code_col="ICD_CODE",
         exploded_cols=[
             "dx_CCS_CODE",

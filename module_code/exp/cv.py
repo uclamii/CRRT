@@ -109,7 +109,7 @@ def run_cv(
     tuple
 
     """
-    input_df = load_data(args)
+    input_df = load_data(args, args.train_val_cohort)
 
     # shuffle df
     input_df = shuffle(input_df, random_state=random_state)

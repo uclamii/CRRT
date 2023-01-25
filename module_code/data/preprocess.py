@@ -23,7 +23,8 @@ def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
         "Comfort Care",
         "Expired ",
     ]
-    df = df.drop(drop_columns, axis=1)
+    # Ignore errors: it's ok if these don't exist (e.g. in ucla: control)
+    df = df.drop(drop_columns, axis=1, errors="ignore")
     # Get rid of "Unnamed" Column
     df = df.drop(df.columns[df.columns.str.contains("^Unnamed")], axis=1)
     # drop columns with all nan values
@@ -32,7 +33,7 @@ def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
     df = get_pt_type_indicators(df)
 
     # Exclude pediatric data, adults considered 21+
-    is_adult_mask = df["Age"] >= 21
+    is_adult_mask = df["AGE"] >= 21
     df = df[~is_adult_mask] if args.patient_age == "peds" else df[is_adult_mask]
 
     return df

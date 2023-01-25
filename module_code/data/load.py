@@ -42,7 +42,10 @@ def get_num_prev_crrt_treatments(df: DataFrame):
         lambda df: df["Start Date"].reset_index(drop=True)
     )
     # rename the outermost index which should be num prev treatments
-    treatments_per_pt.index.rename("Num Prev CRRT Treatments", level=-1, inplace=True)
+    # Changed in pandas v1.3.0
+    treatments_per_pt.index.set_names(
+        "Num Prev CRRT Treatments", level=-1, inplace=True
+    )
     # separate it out and make multindex: [pt, start date]
     num_prev_crrt_treatments = treatments_per_pt.reset_index(level=-1).set_index(
         "Start Date", append=True
@@ -81,7 +84,7 @@ def load_outcomes(
     outcomes_df = outcomes_df.dropna(subset=["IP_PATIENT_ID"])
 
     # Get rid of Age feature that I constructed since controls don't have outcomes file
-    outcomes_df.drop("Age", axis=1)
+    outcomes_df.drop("Age", axis=1, errors="ignore")
 
     #### Construct Binary Outcome ####
     # Recommend CRRT if they had a positive outcome.
@@ -136,11 +139,11 @@ def construct_outcomes(procedures_df: DataFrame, merge_on: List[str]) -> DataFra
 
 def load_static_features(
     raw_data_dir: str,
-    static_features: List[str] = (
+    static_features: List[str] = [
         # "Allergies.txt",  # Very sparse for CRRT patients.
         "Patient_Demographics.txt",
         # "Social_History.txt",
-    ),
+    ],
 ) -> DataFrame:
     loading_message("Static Features")
     """
@@ -225,7 +228,7 @@ def merge_features_with_outcome(
     post_start_delta: Optional[Dict[str, int]] = None,
     time_window_end: str = "Start Date",
     slide_window_by: int = 0,
-    preloaded_dfs: Optional[Dict[str, DataFrame]] = {},
+    preloaded_dfs: Dict[str, DataFrame] = {},
 ) -> DataFrame:
     """
     Loads outcomes and features and then merges them.
@@ -325,7 +328,7 @@ def get_preprocessed_df_path(args: Namespace, cohort: str) -> str:
     return join(getattr(args, f"{cohort}_data_dir"), preprocessed_df_fname)
 
 
-def load_data(args: Namespace, cohort: str = None) -> DataFrame:
+def load_data(args: Namespace, cohort: str) -> DataFrame:
     preprocessed_df_path = get_preprocessed_df_path(args, cohort)
     try:
         deserialize_fn = getattr(serialize_pkg, f"read_{args.serialization}")
@@ -341,8 +344,10 @@ def load_data(args: Namespace, cohort: str = None) -> DataFrame:
         Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
         """
         cohort_data_dir = getattr(args, f"{cohort}_data_dir")
-        static_features = load_static_features(cohort_data_dir)
-        features = features.join(static_features, how="inner")
+        static_features = load_static_features(cohort_data_dir).set_index(
+            "IP_PATIENT_ID"
+        )
+        df = df.join(static_features, how="inner")
 
     return adhoc_preprocess_data(df, args)
 
