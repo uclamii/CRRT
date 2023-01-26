@@ -75,7 +75,6 @@ class TestEvalModel(unittest.TestCase):
 
     @patch("module_code.data.sklearn_loaders.load_data")
     def test_explain(self, mock_load_data_fn):
-        # TODO: idk why the # of calls is 0, it looks like patch isn't working the way I am expecting it to.
         mock_load_data_fn.side_effect = self.load_data_side_effect
 
         with self.subTest("SHAP"):
@@ -99,6 +98,7 @@ class TestEvalModel(unittest.TestCase):
 
             model.evaluate(self.data, "train")
 
+            # TODO: idk why the # of calls is 0, it looks like patch isn't working the way I am expecting it to.
             with self.subTest("With Feature Importance"):
                 model.static_model.use_shap_for_feature_importance = True
                 with patch(  # ref: https://stackoverflow.com/a/55960830

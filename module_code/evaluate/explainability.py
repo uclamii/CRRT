@@ -34,11 +34,13 @@ def shap_explainability(
         idxs = filter_fns[sample_type](preds, labels).nonzero()[0]
         if len(idxs) > 0:
             i = idxs[0]
+            plt.clf()
             shap.plots.waterfall(shap_values[i], show=False)
             figure = plt.gcf()
-            figure.suptitle(
-                f"{prefix} {sample_type} Decision Explanation (SHAP, iloc: {i})"
+            plt.title(
+                f"{prefix} {sample_type} Decision Explanation (SHAP, iloc: {i})", y=1
             )
+            plt.tight_layout(pad=3)
             log_figure(
                 figure,
                 join(
@@ -49,14 +51,17 @@ def shap_explainability(
             )
 
     if top_k:
-        figure.suptitle("")
+        plt.clf()
         shap.plots.beeswarm(shap_values, show=False)
         figure = plt.gcf()
+        plt.title(f"{prefix} SHAP Feature Impact")
         # includes impact direction
         log_figure(figure, join("img_artifacts", f"{prefix}_feature_impact.png"))
 
+        plt.clf()
         shap.plots.bar(shap_values, show=False)
         figure = plt.gcf()
+        plt.title(f"{prefix} SHAP Absolute Feature Importance")
         # absolute value magnitude impact
         log_figure(figure, join("img_artifacts", f"{prefix}_feature_importance.png"))
 
