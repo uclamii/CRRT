@@ -107,3 +107,26 @@ class TestEvalModel(unittest.TestCase):
                     model.evaluate(self.data, "train")
                     # called 3 times: waterfall, beeswarm, bar
                     # self.assertGreaterEqual(3, mock_log_fig.call_count)
+
+    @patch("module_code.data.sklearn_loaders.load_data")
+    def test_curves(self, mock_load_data_fn):
+        mock_load_data_fn.side_effect = self.load_data_side_effect
+
+        with self.subTest("SHAP"):
+            args = Namespace(
+                seed=SEED,
+                modeln="xgb",
+                metric_names=[],
+                curve_names=["calibration_curve"],
+                plot_names=[],
+                top_k_feature_importance=5,
+                model_kwargs={},
+                **self.data_args,
+            )
+            self.data.setup(args)
+
+            model = CRRTStaticPredictor.from_argparse_args(args)
+            model.fit(self.data)
+
+            self.data.train_filters = None
+            model.evaluate(self.data, "train")
