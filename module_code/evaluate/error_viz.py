@@ -1,11 +1,13 @@
 from logging import warn
 from typing import List
-from mlflow import log_artifact, log_figure
+from mlflow import log_artifact, active_run
 from matplotlib import pyplot as plt
 from mealy import ErrorAnalyzer, ErrorVisualizer
 from os.path import join
 from numpy import ndarray
 from sklearn.base import ClassifierMixin
+
+from evaluate.utils import log_figure
 
 
 def error_visualization(
@@ -14,8 +16,8 @@ def error_visualization(
     prefix: str,
     model: ClassifierMixin,
     columns: List[str],
-    categorical_columns: List[str],
     seed: int,
+    **kwargs,
 ):
     if len(data) < 100:
         warn(f"Dataset {prefix} has less than 100 rows, cannot do error visualization.")
@@ -38,7 +40,8 @@ def error_visualization(
         tree_src.format = "png"
         tree_src.render(join("img_artifacts", f"{prefix}_tree"))
         path = join("img_artifacts", f"{prefix}_tree.png")
-        log_artifact(path, path)
+        if active_run():
+            log_artifact(path, path)
 
         leaf_id = error_analyzer._get_ranked_leaf_ids()[0]
         # TODO: tie this to feature importance top-k-features? (use same k)

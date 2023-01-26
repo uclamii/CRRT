@@ -1,18 +1,11 @@
 from typing import List, Tuple, Union
-from mlflow import log_text
 from numpy import ndarray, unique
 from pandas import Series, DataFrame, crosstab
 from sklearn.base import ClassifierMixin
 from scipy.stats import chi2_contingency, ttest_ind, mannwhitneyu, fisher_exact, shapiro
 
 from evaluate.effect_size_metrics import cohens_h, cramers_corrected_stat, hedges_g
-
-filter_fns = {
-    "tp": lambda data, labels: (data == labels) & (labels == 1),
-    "tn": lambda data, labels: (data == labels) & (labels == 0),
-    "fp": lambda data, labels: (data != labels) & (data == 1),
-    "fn": lambda data, labels: (data != labels) & (data == 0),
-}
+from evaluate.utils import log_text, filter_fns
 
 
 def is_ctn(
@@ -120,11 +113,11 @@ def get_pvalue_and_effect_size(
 def model_randomness(
     data: ndarray,
     labels: ndarray,
+    preds: ndarray,
     prefix: str,
-    model: ClassifierMixin,
     columns: List[str],
-    categorical_columns: List[str],
     seed: int,
+    **kwargs,
 ):
     """Tests for model randomness by comparing
     ("fn", "tp"), ("fn", "tn"), ("fp", "tn"), ("fp", "tp")
@@ -133,7 +126,6 @@ def model_randomness(
     But, if the FN looks like TP then the model is failing to learn something meaningful, and suggests that the model is more random.
     However, just statistical tests are not enough, we also need to report effect sizes.
     """
-    preds = model.predict(data)
     subsets = {k: data[v(preds, labels)] for k, v in filter_fns.items()}
     # we can assume independence between these because
     # A) mutually exclusive groups
