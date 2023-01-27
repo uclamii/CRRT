@@ -56,14 +56,24 @@ def shap_explainability(
         figure = plt.gcf()
         plt.title(f"{prefix} SHAP Feature Impact")
         # includes impact direction
-        log_figure(figure, join("img_artifacts", f"{prefix}_feature_impact.png"))
+        log_figure(
+            figure,
+            join("img_artifacts", "feature_impact", f"{prefix}_feature_impact.png"),
+        )
 
         plt.clf()
         shap.plots.bar(shap_values, show=False)
         figure = plt.gcf()
         plt.title(f"{prefix} SHAP Absolute Feature Importance")
         # absolute value magnitude impact
-        log_figure(figure, join("img_artifacts", f"{prefix}_feature_importance.png"))
+        log_figure(
+            figure,
+            join(
+                "img_artifacts",
+                "feature_importance",
+                f"{prefix}_feature_importance.png",
+            ),
+        )
 
 
 def lime_explainability(

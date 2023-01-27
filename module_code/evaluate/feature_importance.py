@@ -49,6 +49,6 @@ def feature_importance(
     plt.tight_layout()
     log_figure(
         plt.gcf(),
-        join("img_artifacts", f"{prefix}_feature_importance.png"),
+        join("img_artifacts", "feature_importance", f"{prefix}_feature_importance.png"),
     )
     plt.close()
