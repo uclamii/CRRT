@@ -368,16 +368,21 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         ## Evaluate for each filter ##
         filters = getattr(data, f"{stage}_filters")
         if filters is not None:
+            if mlflow.active_run():
+                subgroup_sizes = {f"{k}_N": v.sum() for k, v in filters.items()}
+                mlflow.log_metrics(subgroup_sizes)
+
             for filter_n, filter in filters.items():
-                # If we don't ask for values sklearn will complain it was fitted without feature names
-                self.eval_and_log(
-                    X[filter.values],
-                    y[filter.values],
-                    pred_probas[filter.values],
-                    preds[filter.values],
-                    prefix=f"{self.static_model.hparams['modeln']}_{stage}_{filter_n}_",
-                    categorical_columns=categorical_columns,
-                )
+                if filter.sum():  # don't do anything if there's no one represented
+                    # If we don't ask for values sklearn will complain it was fitted without feature names
+                    self.eval_and_log(
+                        X[filter.values],
+                        y[filter.values],
+                        pred_probas[filter.values],
+                        preds[filter.values],
+                        prefix=f"{self.static_model.hparams['modeln']}_{stage}_{filter_n}_",
+                        categorical_columns=categorical_columns,
+                    )
 
         return metrics
 
@@ -403,17 +408,22 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
         pred_probas = pred_probas.values
 
+        labels_are_homog = len(labels.value_counts()) == 1
+        metrics_ok_homog = {"accuracy"}
+
         # Metrics
         if self.static_model.hparams["metric_names"] is not None:
-            metrics = {
-                f"{prefix}_{metric_name}": metric_fn(
-                    labels, pred_probas, decision_threshold
-                )
-                for metric_name, metric_fn in zip(
-                    self.static_model.hparams["metric_names"],
-                    self.static_model.metrics,
-                )
-            }
+            metrics = {}
+            for metric_name, metric_fn in zip(
+                self.static_model.hparams["metric_names"],
+                self.static_model.metrics,
+            ):
+                name = f"{prefix}_{metric_name}"
+                if labels_are_homog and metric_name not in metrics_ok_homog:
+                    metrics[name] = np.nan
+                else:
+                    metrics[name] = metric_fn(labels, pred_probas, decision_threshold)
+
             if mlflow.active_run():
                 mlflow.log_metrics(metrics)
 

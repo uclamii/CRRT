@@ -1,6 +1,7 @@
 from argparse import ArgumentParser, Namespace
+from functools import reduce
 from lib2to3.pgen2.token import OP
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 
@@ -98,29 +99,32 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 args, self.eval_cohort, reference_cols
             )
             split_args += [X_eval, y_eval]
-        train_tuple, val_tuple, test_tuple = self.split_dataset(*split_args)
+
+        X_y_tuples = self.split_dataset(*split_args)
+        split_names = list(X_y_tuples.keys())
 
         # Apply filters for subpopulation analysis later
         # MUST OCCUR BEFORE TRANSFORM (before feature selection)
         if self.filters:
             # We set up filters ahead of time so that we don't have to worry about feature selection
-            self.train_filters = {k: v(train_tuple[0]) for k, v in self.filters.items()}
-            self.val_filters = {k: v(val_tuple[0]) for k, v in self.filters.items()}
-            self.test_filters = {k: v(test_tuple[0]) for k, v in self.filters.items()}
+            for split in split_names:
+                X = X_y_tuples[split][0]
+                filters = {
+                    k: self.get_filter(X, *args) for k, args in self.filters.items()
+                }
+                setattr(self, f"{split}_filters", filters)
 
         # fit pipeline on train, call transform in get_item of dataset
-        if data_transform is not None:
-            self.data_transform = data_transform
-        else:
-            self.data_transform = self.get_post_split_transform(train_tuple)
+        self.data_transform = (
+            data_transform
+            if data_transform is not None
+            else self.get_post_split_transform(X_y_tuples["train"])
+        )
 
         # set self.train, self.val, self.test
-        # self.train = CRRTDataset(train_tuple, self.data_transform)
-        # self.val = CRRTDataset(val_tuple, self.data_transform)
-        # self.test = CRRTDataset(test_tuple, self.data_transform)
-        self.train = (self.data_transform(train_tuple[0]), train_tuple[1])
-        self.val = (self.data_transform(val_tuple[0]), val_tuple[1])
-        self.test = (self.data_transform(test_tuple[0]), test_tuple[1])
+        for split in split_names:
+            X, y = X_y_tuples[split]
+            setattr(self, split, (self.data_transform(X), y))
 
     def load_data_and_additional_preproc(
         self, args: Namespace, cohort: str, reference_cols=None
@@ -144,6 +148,29 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             # drop cols in X but not in reference
             X = X.drop(X.columns.difference(reference_cols), axis=1)
         return (X, y)
+
+    @classmethod
+    @staticmethod
+    def get_filter(
+        df: pd.DataFrame,
+        cols: Union[str, List[str]],
+        vals: Union[Any, List[Any]],
+        combine: str = "AND",
+    ) -> pd.Series:
+        if isinstance(cols, list):
+            assert isinstance(vals, list) and len(vals) == len(
+                cols
+            ), "cols don't match vals for getting filters."
+            lambda_fns = map(
+                lambda col_val: df[col_val[0]] == col_val[1], zip(cols, vals)
+            )
+            # roll up the functions
+            if combine == "AND":
+                return reduce(lambda f1, f2: f1 & f2, lambda_fns)
+            else:  # OR
+                return reduce(lambda f1, f2: f1 | f2, lambda_fns)
+
+        return df[cols] == vals
 
     def get_post_split_transform(
         self, train: DataLabelTuple, reference_cols_mask: Optional[List[bool]] = None
@@ -225,7 +252,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         reference_ids: Optional[Dict[str, pd.Index]] = None,
         X_eval: Optional[pd.DataFrame] = None,
         y_eval: Optional[Union[pd.Series, np.ndarray]] = None,
-    ) -> Tuple[DataLabelTuple, DataLabelTuple, DataLabelTuple]:
+    ) -> Dict[str, DataLabelTuple]:
         """
         Splitting with stratification using sklearn.
         We then convert to Dataset so the Dataloaders can use that.
@@ -283,13 +310,16 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # Note that like this, we will end up with a set size larger than we expect
         # Because we stratify by ID and certain patients may have more treatments than others.
         if not separate_eval_dataset:  # pull all data from the same cohort
-            return ((X.loc[ids], y[ids]) for ids in (train_ids, val_ids, test_ids))
+            return {
+                split_name: (X.loc[ids], y[ids])
+                for split_name, ids in self.split_pt_ids.items()
+            }
         # otherwise pull test split from the eval cohort separately
-        return (
-            (X.loc[train_ids], y[train_ids]),
-            (X.loc[val_ids], y[val_ids]),
-            (X_eval.loc[test_ids], y_eval[test_ids]),
-        )
+        return {
+            "train": (X.loc[train_ids], y[train_ids]),
+            "val": (X.loc[val_ids], y[val_ids]),
+            "test": (X_eval.loc[test_ids], y_eval[test_ids]),
+        }
 
     @staticmethod
     # def add_data_args(parent_parsers: List[ArgumentParser]) -> ArgumentParser:
