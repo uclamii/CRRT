@@ -333,24 +333,25 @@ def get_preprocessed_df_path(args: Namespace, cohort: str) -> str:
 
 def load_data(args: Namespace, cohort: str) -> DataFrame:
     preprocessed_df_path = get_preprocessed_df_path(args, cohort)
-    try:
-        deserialize_fn = getattr(serialize_pkg, f"read_{args.serialization}")
-        # raise IOError
+    deserialize_fn = getattr(serialize_pkg, f"read_{args.serialization}")
+    try:  # raise IOError
         df = deserialize_fn(preprocessed_df_path)
     except IOError:
         df = process_and_serialize_raw_data(args, preprocessed_df_path, cohort)
 
     if args.model_type == "static":
-        # TODO[LOW]: for now loading static data will be adhoc so i dont have to reserialize everything over and over again.
-        """
-        Outer join: patients with no longitudinal data will stil be included.
-        Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
-        """
         cohort_data_dir = getattr(args, f"{cohort}_data_dir")
-        static_features = load_static_features(cohort_data_dir).set_index(
-            "IP_PATIENT_ID"
-        )
-        df = df.join(static_features, how="inner")
+        path = join(cohort_data_dir, f"static_data.{args.serialization}")
+        try:
+            df = deserialize_fn(path)
+        except IOError:
+            static_features = load_static_features(cohort_data_dir).set_index(
+                "IP_PATIENT_ID"
+            )
+            # Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
+            df = df.join(static_features, how="inner")
+            serialize_fn = getattr(df, f"to_{args.serialization}")
+            serialize_fn(path)
 
     return adhoc_preprocess_data(df, args)
 

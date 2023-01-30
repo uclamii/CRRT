@@ -42,8 +42,9 @@ from models.utils import has_gpu, seed_everything
 from models.base_model import BaseSklearnPredictor, AbstractModel
 from evaluate.error_viz import error_visualization
 from evaluate.error_analysis import model_randomness
-from evaluate.explanability import lime_explainability
-from evaluate.feature_importance import log_feature_importances
+from evaluate.explainability import shap_explainability, lime_explainability
+from evaluate.feature_importance import feature_importance
+from evaluate.utils import log_figure
 
 STATIC_MODEL_FNAME = "static_model.pkl"
 STATIC_HPARAM_FNAME = "static_hparams.yml"
@@ -97,18 +98,20 @@ METRIC_MAP = {
 }
 
 # https://scikit-learn.org/stable/modules/classes.html#id3
-curve_map = {
+CURVE_MAP = {
     "calibration_curve": CalibrationDisplay,
     "roc_curve": RocCurveDisplay,
     "pr_curve": PrecisionRecallDisplay,
     "det_curve": DetCurveDisplay,
-    "confusion_matrix": ConfusionMatrixDisplay,
 }
 
-error_analysis_map = {
-    "visualize": error_visualization,
+PLOT_MAP = {
+    "confusion_matrix": ConfusionMatrixDisplay,
+    "error_viz": error_visualization,
     "randomness": model_randomness,
-    "explain": lime_explainability,
+    "shap_explain": shap_explainability,
+    "lime_explain": lime_explainability,
+    "feature_importance": feature_importance,
 }
 
 
@@ -119,7 +122,7 @@ class StaticModel(AbstractModel, HyperparametersMixin):
         modeln: str,
         metric_names: List[str],
         curve_names: List[str],
-        error_analysis: List[str],
+        plot_names: List[str],
         top_k_feature_importance: int,
         model_kwargs: Dict[str, Any],
     ):
@@ -138,9 +141,7 @@ class StaticModel(AbstractModel, HyperparametersMixin):
         self.model = self.build_model()
         self.metrics = self.configure_metrics(self.hparams["metric_names"])
         self.curves = self.configure_curves(self.hparams["curve_names"])
-        self.error_analysis = self.configure_error_analysis(
-            self.hparams["error_analysis"]
-        )
+        self.plots = self.configure_plots(self.hparams["plot_names"])
 
     def build_model(self):
         if self.hparams["modeln"] in ALG_MAP:
@@ -161,16 +162,19 @@ class StaticModel(AbstractModel, HyperparametersMixin):
         """Pick plots."""
         if curve_names is None:
             return None
-        for curve in curve_names:
-            assert (
-                curve in curve_map
-            ), f"{curve} is not valid plot name. Must match a key in `plot_map`"
-        return [curve_map[curve] for curve in curve_names]
+        return [CURVE_MAP[curve] for curve in curve_names]
 
-    def configure_error_analysis(self, error_analysis: List[str]) -> List[Callable]:
-        if error_analysis is None:
+    def configure_plots(self, plot_names: List[str]) -> List[Callable]:
+        if plot_names is None:
             return None
-        return [error_analysis_map[analysis_name] for analysis_name in error_analysis]
+        self.use_shap_for_feature_importance = True
+        plots = []
+        for plot in plot_names:
+            if plot == "feature_importance" and self.use_shap_for_feature_importance:
+                pass
+            else:
+                plots.append(PLOT_MAP[plot])
+        return plots
 
     def log_model(self):
         """Log to MLFlow."""
@@ -262,21 +266,21 @@ class StaticModel(AbstractModel, HyperparametersMixin):
             "--static-curves",
             dest="curve_names",
             type=str,
-            action=YAMLStringListToList(str, choices=list(curve_map.keys())),
+            action=YAMLStringListToList(str, choices=list(CURVE_MAP.keys())),
             help="(List of comma-separated strings) Name of curves/plots from sklearn.",
         )
         p.add_argument(
-            "--static-error-analysis",
-            dest="error_analysis",
-            action=YAMLStringListToList(str, choices=list(error_analysis_map.keys())),
-            help="(List of comma-separated strings) Name of which error analyses desired for static prediction.",
+            "--static-plots",
+            dest="plot_names",
+            action=YAMLStringListToList(str, choices=list(PLOT_MAP.keys())),
+            help="(List of comma-separated strings) Name of which plots aside from curves are desired for static prediction.",
         )
         p.add_argument(
             "--static-top-k-feature-importance",
             dest="top_k_feature_importance",
             type=int,
-            default=None,
-            help="Number of features to limit feature importances to.",
+            default=10,
+            help="Number of features to limit feature importances to. Does NOT turn on/off the plot.",
         )
         return p
 
@@ -310,7 +314,10 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     def fit(self, data: SklearnCRRTDataModule):
         seed_everything(self.seed)
         self.static_model.model.fit(*data.train)
-        self.log_model()
+        if mlflow.active_run() is None:
+            self.save_model(join("local_data", "static_model"))
+        else:
+            self.log_model()
         return self
 
     def transform(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
@@ -342,11 +349,18 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         else:
             columns = data.columns
         categorical_columns = data.categorical_columns.intersection(columns)
+
         X = pd.DataFrame(X, columns=columns)
+        pred_probas = pd.Series(self.predict_proba(X.values)[:, 1], index=y.index)
+        preds = pd.Series(self.predict(X.values), index=y.index)
+        # np.save(predict_probas_file, predict_proba)
+
         ## Evaluate on split of dataset (train, val, test) ##
         metrics = self.eval_and_log(
             X,
             y,
+            pred_probas,
+            preds,
             prefix=f"{self.static_model.hparams['modeln']}_{stage}_",
             categorical_columns=categorical_columns,
         )
@@ -354,14 +368,21 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         ## Evaluate for each filter ##
         filters = getattr(data, f"{stage}_filters")
         if filters is not None:
+            if mlflow.active_run():
+                subgroup_sizes = {f"{k}_N": v.sum() for k, v in filters.items()}
+                mlflow.log_metrics(subgroup_sizes)
+
             for filter_n, filter in filters.items():
-                # If we don't ask for values sklearn will complain it was fitted without feature names
-                self.eval_and_log(
-                    X[filter.values],
-                    y[filter.values],
-                    prefix=f"{self.static_model.hparams['modeln']}_{stage}_{filter_n}_",
-                    categorical_columns=categorical_columns,
-                )
+                if filter.sum():  # don't do anything if there's no one represented
+                    # If we don't ask for values sklearn will complain it was fitted without feature names
+                    self.eval_and_log(
+                        X[filter.values],
+                        y[filter.values],
+                        pred_probas[filter.values],
+                        preds[filter.values],
+                        prefix=f"{self.static_model.hparams['modeln']}_{stage}_{filter_n}_",
+                        categorical_columns=categorical_columns,
+                    )
 
         return metrics
 
@@ -369,34 +390,42 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         self,
         data: pd.DataFrame,
         labels: pd.Series,
+        pred_probas: pd.Series,
+        preds: pd.Series,
         prefix: str,
         categorical_columns: Union[List[str], Index],
         decision_threshold: float = 0.5,
     ) -> Dict[str, Any]:
         """Logs metrics and curves/plots."""
         metrics = None
-        predict_proba = self.predict_proba(data.values)[:, 1]
-        # np.save(predict_probas_file, predict_proba)
 
         # log predict probabilities
         predict_probas_file = join("predict_probas", f"{prefix}_predict_probas.pkl")
         makedirs(dirname(predict_probas_file), exist_ok=True)  # ensure dir exists
-        predict_probas = pd.Series(predict_proba, index=labels.index)
-        predict_probas.to_pickle(predict_probas_file)
-        mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
+        pred_probas.to_pickle(predict_probas_file)
+        if mlflow.active_run():
+            mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
+
+        pred_probas = pred_probas.values
+
+        labels_are_homog = len(labels.value_counts()) == 1
+        metrics_ok_homog = {"accuracy"}
 
         # Metrics
         if self.static_model.hparams["metric_names"] is not None:
-            metrics = {
-                f"{prefix}_{metric_name}": metric_fn(
-                    labels, predict_proba, decision_threshold
-                )
-                for metric_name, metric_fn in zip(
-                    self.static_model.hparams["metric_names"],
-                    self.static_model.metrics,
-                )
-            }
-            mlflow.log_metrics(metrics)
+            metrics = {}
+            for metric_name, metric_fn in zip(
+                self.static_model.hparams["metric_names"],
+                self.static_model.metrics,
+            ):
+                name = f"{prefix}_{metric_name}"
+                if labels_are_homog and metric_name not in metrics_ok_homog:
+                    metrics[name] = np.nan
+                else:
+                    metrics[name] = metric_fn(labels, pred_probas, decision_threshold)
+
+            if mlflow.active_run():
+                mlflow.log_metrics(metrics)
 
         # Curves/Plots
         if self.static_model.hparams["curve_names"] is not None:
@@ -404,34 +433,34 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.hparams["curve_names"],
                 self.static_model.curves,
             ):
-                mlflow.log_figure(
-                    curve.from_predictions(labels, predict_proba).plot().figure_,
-                    join("img_artifacts", "curves", f"{prefix}_{curve_name}.png"),
-                )
+                figure = curve.from_predictions(labels, pred_probas).plot().figure_
+                name = f"{prefix}_{curve_name}"
+                figure.suptitle(name)
+                log_figure(figure, join("img_artifacts", "curves", f"{name}.png"))
 
-        # Error analysis
-        if self.static_model.hparams["error_analysis"] is not None:
-            for analysis_fn in self.static_model.error_analysis:
-                analysis_fn(
-                    data.values,
-                    labels,
-                    prefix,
-                    self.static_model.model,
-                    data.columns,
-                    categorical_columns,
-                    self.seed,
-                )
+        # Other plots
+        if self.static_model.hparams["plot_names"] is not None:
+            args = {
+                "data": data.values,
+                "labels": labels.values,
+                "preds": preds.values,
+                "prefix": prefix,
+                "model": self.static_model.model,
+                "columns": data.columns,
+                "categorical_columns": categorical_columns,
+                "seed": self.seed,
+                "top_k": self.static_model.hparams["top_k_feature_importance"],
+            }
 
-        # Feature importance
-        # Ref: https://machinelearningmastery.com/calculate-feature-importance-with-python/
-        if self.static_model.hparams["top_k_feature_importance"] is not None:
-            log_feature_importances(
-                self.static_model.hparams["top_k_feature_importance"],
-                data.values,
-                labels,
-                prefix,
-                self.static_model.model,
-                data.columns,
-                self.seed,
-            )
+            for analysis_fn in self.static_model.plots:
+                if (
+                    not self.static_model.use_shap_for_feature_importance
+                    and analysis_fn == shap_explainability
+                ):
+                    new_args = args.copy()
+                    new_args["top_k"] = None
+                    analysis_fn(**new_args)
+                else:
+                    analysis_fn(**args)
+
         return metrics

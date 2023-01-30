@@ -1,5 +1,7 @@
 from argparse import Namespace
+from functools import reduce
 import pickle
+from typing import Any, Callable, List, Tuple, Union
 import cloudpickle  # Allows serializing functions
 import pandas as pd
 from os.path import join
@@ -27,18 +29,56 @@ def dump_artifacts_for_rolling_windows(
         cloudpickle.dump(data.data_transform, f)
 
 
+def combine_filters(
+    f1_args: Tuple[Union[str, List[str]], Union[Any, List[Any]]],
+    f2_args: Tuple[Union[str, List[str]], Union[Any, List[Any]]],
+) -> Tuple[Union[str, List[str]], Union[Any, List[Any]]]:
+    f1_cols, f1_vals = f1_args
+    f2_cols, f2_vals = f2_args
+
+    def listify(item: Union[Any, List[Any]]) -> List[Any]:
+        return item if isinstance(item, list) else [item]
+
+    return (listify(f1_cols) + listify(f2_cols), listify(f1_vals) + listify(f2_vals))
+
+
 def static_learning(args: Namespace):
     # need to update CRRTDataModule
-    filters = {
-        "heart": lambda df: df["heart_pt_indicator"] == 1,
-        "liver": lambda df: df["liver_pt_indicator"] == 1,
-        "infection": lambda df: df["infection_pt_indicator"] == 1,
-        "no_heart_liver_infection": lambda df: (
-            (df["infection_pt_indicator"] == 0)
-            & (df["heart_pt_indicator"] == 0)
-            & (df["liver_pt_indicator"] == 0)
+    # TODO: this can be cleaned up /maybe moved and then names passed as flag to select?
+    # these filters will be passed to `SklearnCRRTDataModule.get_filter`
+    disease_filter_args = {  # filter based on disease status
+        "heart": ("heart_pt_indicator", 1),
+        "liver": ("liver_pt_indicator", 1),
+        "infection": ("infection_pt_indicator", 1),
+        "no_heart_liver_infection": (
+            ["infection_pt_indicator", "heart_pt_indicator", "liver_pt_indicator"],
+            [0, 0, 0],
         ),
     }
+    demo_filter_args = {  # filter based on demographic
+        "female": ("SEX", 1),
+        "male": ("SEX", 0),
+    }
+    # these are pulled from descriptive_report.ipynb, maybe make it auto?
+    for race in [
+        "American Indian or Alaska Native",
+        "Asian",
+        "Black or African American",
+        "Multiple Races",
+        "Native Hawaiian or Other Pacific Islander",
+        "Other",
+        "Patient Refused",
+        "Unknown",
+        "White or Caucasian",
+    ]:
+        demo_filter_args[race] = (f"RACE_{race}", 1)
+    cartesian_product = {
+        f"{demo}_{dz}": combine_filters(demo_args, dz_args)
+        for demo, demo_args in demo_filter_args.items()
+        for dz, dz_args in disease_filter_args.items()
+    }
+    filters = {**disease_filter_args, **demo_filter_args, **cartesian_product}
+
     data = SklearnCRRTDataModule.from_argparse_args(args, filters=filters)
 
     # Pass the original datasets split pt_ids if doing rolling window analysis

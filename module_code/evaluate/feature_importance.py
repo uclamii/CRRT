@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Callable
 from numpy import ndarray
 from pandas import Series
 from os.path import join
@@ -19,7 +19,7 @@ from sklearn.base import ClassifierMixin
 from mlflow import log_figure
 
 
-def log_feature_importances(
+def feature_importance(
     top_k: int,
     data: ndarray,
     labels: ndarray,
@@ -27,7 +27,9 @@ def log_feature_importances(
     model: ClassifierMixin,
     columns: List[str],
     seed: int,
+    **kwargs,  # ignore args other fns use in plot_names but not this one
 ):
+    # Ref: https://machinelearningmastery.com/calculate-feature-importance-with-python/
     # TODO: inject feature names
     if isinstance(model, LogisticRegression) or isinstance(model, SVC):
         importance = model.coef_[0]
@@ -47,6 +49,6 @@ def log_feature_importances(
     plt.tight_layout()
     log_figure(
         plt.gcf(),
-        join("img_artifacts", f"{prefix}_feature_importance.png"),
+        join("img_artifacts", "feature_importance", f"{prefix}_feature_importance.png"),
     )
     plt.close()
