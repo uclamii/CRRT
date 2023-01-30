@@ -75,6 +75,9 @@ def load_outcomes(
 
     #### Filtering ####
 
+    # For patients with duplicated start dates, take the sample with greatest end date
+    outcomes_df = outcomes_df.sort_values(by=['IP_PATIENT_ID', 'End Date']).drop_duplicates(subset=['IP_PATIENT_ID', 'Start Date'], keep='last')
+
     # Each row should have exactly 1 1.0 value (one-hot of the 4 cols)
     exactly_one_outcome_mask = outcomes_df[outcome_cols].fillna(0).sum(axis=1) == 1
 
@@ -84,7 +87,7 @@ def load_outcomes(
     outcomes_df = outcomes_df.dropna(subset=["IP_PATIENT_ID"])
 
     # Get rid of Age feature that I constructed since controls don't have outcomes file
-    outcomes_df.drop("Age", axis=1, errors="ignore")
+    outcomes_df = outcomes_df.drop("Age", axis=1, errors="ignore")
 
     #### Construct Binary Outcome ####
     # Recommend CRRT if they had a positive outcome.
