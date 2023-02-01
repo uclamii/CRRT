@@ -80,9 +80,31 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             args, self.train_val_cohort, reference_cols
         )
 
+        # its the same for all the sequences, just take one
+        # y = y.groupby("IP_PATIENT_ID").last()
+
+        # Load other dataset if applicable and align columns
+        if self.train_val_cohort != self.eval_cohort:
+            X_eval, y_eval = self.load_data_and_additional_preproc(
+                args, self.eval_cohort, reference_cols
+            )
+            # combine columns (outer join)
+            all_columns = X.columns.union(X_eval.columns)
+            # make sure columns in are availabl exist here (but they're all missing)
+            # the missing values will be simple imputed (ctn) and 0 imputed (nan)
+            # by the serialized transform function
+            # ref: https://stackoverflow.com/a/30943503/1888794
+            X = X.reindex(columns=all_columns)
+            X_eval = X_eval.reindex(columns=all_columns)
+
         #### Columns ####
-        # Needs to come after reference cols are potentially set
-        # need to save this before feature selection for sliding window analysis
+        """
+        Needs to come after:
+          reference cols are potentially set
+          potentially aligning columns with the eval dataset
+        Needs to come before:
+          feature selection for sliding window analysis
+        """
         self.columns = X.columns
         self.categorical_columns = X.filter(
             regex=CATEGORICAL_COL_REGEX, axis=1
@@ -90,16 +112,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # set this here instead of init so that outcome col isn't included
         self.ctn_columns = X.columns.difference(self.categorical_columns)
 
-        # its the same for all the sequences, just take one
-        # y = y.groupby("IP_PATIENT_ID").last()
-
         split_args = [X, y, reference_ids]
         if self.train_val_cohort != self.eval_cohort:
-            X_eval, y_eval = self.load_data_and_additional_preproc(
-                args, self.eval_cohort, reference_cols
-            )
             split_args += [X_eval, y_eval]
-
         X_y_tuples = self.split_dataset(*split_args)
         split_names = list(X_y_tuples.keys())
 
