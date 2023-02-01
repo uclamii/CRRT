@@ -14,7 +14,7 @@ def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
     drop_columns = [
         "Month",
         "Hospital name",
-        "CRRT Total Days",
+        "CRRT Total Days",  # this will not exist for incoming new patients.
         "End Date",
         "Machine",
         "ICU",

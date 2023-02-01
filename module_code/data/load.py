@@ -76,7 +76,9 @@ def load_outcomes(
     #### Filtering ####
 
     # For patients with duplicated start dates, take the sample with greatest end date
-    outcomes_df = outcomes_df.sort_values(by=['IP_PATIENT_ID', 'End Date']).drop_duplicates(subset=['IP_PATIENT_ID', 'Start Date'], keep='last')
+    outcomes_df = outcomes_df.sort_values(
+        by=["IP_PATIENT_ID", "End Date"]
+    ).drop_duplicates(subset=["IP_PATIENT_ID", "Start Date"], keep="last")
 
     # Each row should have exactly 1 1.0 value (one-hot of the 4 cols)
     exactly_one_outcome_mask = outcomes_df[outcome_cols].fillna(0).sum(axis=1) == 1
@@ -124,7 +126,7 @@ def construct_outcomes(procedures_df: DataFrame, merge_on: List[str]) -> DataFra
                 # they should not go on crrt and did not
                 "recommend_crrt": 0,
                 # because they never went on crrt theres 0 days and no prev treatments
-                "Days on CRRT": 0,
+                "CRRT Total Days": 0,
                 "Num Prev CRRT Treatments": 0,
                 # TODO: does it make sense to have this anymore?
                 # crrt_year=lambda row: DatetimeIndex(row["PROCEDURE_DATE"]).year,
@@ -179,7 +181,7 @@ def load_static_features(
                 "VITAL_STATUS": "KNOWN_DECEASED",
             },
             axis=1,
-        )
+        ).replace({"ETHNICITY": {"Choose Not to Answer": "Patient Refused"}})
         static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
         # explicitly mapping here instead of numerical encoding automatically so that you know which is which when referencing outputs/data/etc.
@@ -305,9 +307,7 @@ def merge_features_with_outcome(
 def process_and_serialize_raw_data(
     args: Namespace, preprocessed_df_path: str, cohort: str
 ) -> DataFrame:
-    logging.info(
-        f"Preprocessed file {preprocessed_df_path} does not exist! Creating..."
-    )
+    logging.info(f"Creating preprocessed file {preprocessed_df_path}!")
     merge_on = ["IP_PATIENT_ID", "Start Date"]
     start = timer()
     # Dynamically get the correct function in this module based on the cohort
@@ -343,15 +343,16 @@ def load_data(args: Namespace, cohort: str) -> DataFrame:
         cohort_data_dir = getattr(args, f"{cohort}_data_dir")
         path = join(cohort_data_dir, f"static_data.{args.serialization}")
         try:
-            df = deserialize_fn(path)
+            static_features = deserialize_fn(path)
         except IOError:
             static_features = load_static_features(cohort_data_dir).set_index(
                 "IP_PATIENT_ID"
             )
-            # Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
-            df = df.join(static_features, how="inner")
-            serialize_fn = getattr(df, f"to_{args.serialization}")
+            serialize_fn = getattr(static_features, f"to_{args.serialization}")
             serialize_fn(path)
+
+        # Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
+        df = df.join(static_features, how="inner")
 
     return adhoc_preprocess_data(df, args)
 
