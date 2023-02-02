@@ -201,7 +201,9 @@ def load_static_features(
                 }
             }
         )
-        static_df = map_provider_id_to_type(static_df, raw_data_dir)
+        # Excluding provider id if provided
+        static_df = static_df.drop("PCP_IP_PROVIDER_ID", axis=1, errors="ignore")
+        # static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
         # explicitly mapping here instead of numerical encoding automatically so that you know which is which when referencing outputs/data/etc.
         bin_cols_mapping = {
@@ -213,7 +215,7 @@ def load_static_features(
         cols_to_onehot += [
             "RACE",  # white, other, multiple races, etc.
             "ETHNICITY",  # yes/no hispanic/latino
-            "PCP_PROVIDER_TYPE",
+            # "PCP_PROVIDER_TYPE",
         ]
 
     if "Social_History.txt" in static_features:
