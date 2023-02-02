@@ -174,14 +174,33 @@ def load_static_features(
         cols_to_onehot.append("ALLERGEN_ID")
 
     if "Patient_Demographics.txt" in static_features:
-        static_df = static_df.rename(
+        collapse_ethnicity_map = {  # Collapse everything to (Not) Hisp/Lat
+            "Not Hispanic or Latino": [
+                "Choose Not to Answer",
+                "Patient Refused",
+                "Unknown",
+            ],
+            "Hispanic or Latino": [
+                "Mexican, Mexican American, Chicano/a",
+                "Hispanic/Spanish origin Other",
+                "Puerto Rican",
+                "Cuban",
+            ],
+        }
+        column_alignment = {
+            "GENDER": "SEX",
+            "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
+            "VITAL_STATUS": "KNOWN_DECEASED",
+        }
+        static_df = static_df.rename(column_alignment, axis=1).replace(
             {
-                "GENDER": "SEX",
-                "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
-                "VITAL_STATUS": "KNOWN_DECEASED",
-            },
-            axis=1,
-        ).replace({"ETHNICITY": {"Choose Not to Answer": "Patient Refused"}})
+                "ETHNICITY": {
+                    col: collapsed_name
+                    for collapsed_name, cols in collapse_ethnicity_map.items()
+                    for col in cols
+                }
+            }
+        )
         static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
         # explicitly mapping here instead of numerical encoding automatically so that you know which is which when referencing outputs/data/etc.
