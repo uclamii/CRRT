@@ -10,7 +10,6 @@ from data.longitudinal_utils import get_delta
 from cli_utils import load_cli_args, init_cli_args
 from main import main
 
-MAX_SLIDE = 7
 retrain = False
 
 if __name__ == "__main__":
@@ -39,7 +38,9 @@ if __name__ == "__main__":
 
     # this should be updated from tuning internally, or just set properly
     num_days_to_slide = get_delta(args.pre_start_delta).days
-    for i in range(1, num_days_to_slide + 1):
+    # don't include the last day becaues potentially people with exactly N days of data will not have that much data / not be many
+    # Patients with fewer days won't even appear anymore after sliding so far.
+    for i in range(1, num_days_to_slide):
         args = deepcopy(orig_args)
         dargs = vars(args)
         dargs.update({"slide_window_by": i})
