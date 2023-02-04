@@ -1,5 +1,5 @@
 from argparse import Namespace
-from typing import List
+from typing import Dict, List
 import unittest
 from unittest.mock import patch
 from numpy.random import default_rng
@@ -118,3 +118,106 @@ class TestSklearnLoaders(unittest.TestCase):
             (df[self.outcome_col_name], data.test[1]),
         ]:
             np.testing.assert_array_equal(df1, df2)
+
+    @patch("module_code.data.sklearn_loaders.load_data")
+    def test_filters(self, mock_load_data):
+        mock_load_data.side_effect = self.load_data_side_effect
+
+        data = SklearnCRRTDataModule(
+            SEED,
+            outcome_col_name=self.outcome_col_name,
+            train_val_cohort="ucla_crrt",
+            eval_cohort="ucla_control",
+            # val_split_size=self.val_split_size,
+            val_split_size=0.01,
+        )
+        data.setup(self.args)
+        train_df = data.train[0]
+
+        def test_filters_equal(
+            true_filter: Dict[str, np.ndarray], est_filter: Dict[str, np.ndarray]
+        ):
+            self.assertEqual(true_filter.keys(), est_filter.keys())
+            for true, est in zip(true_filter.values(), est_filter.values()):
+                np.testing.assert_array_equal(true, est)
+
+        with self.subTest("Single Column + Exact"):
+            # 0,0 : first row, first column
+            data.filters = {"filter": ("f1", train_df[0, 0])}
+            data.setup(self.args)
+
+            # should just keep the first value
+            f = np.full(train_df.shape[0], False, dtype=bool)
+            f[0] = True
+            true_train_filter = {"filter": f}
+            test_filters_equal(true_train_filter, data.train_filters)
+
+        with self.subTest("Single Column + Range"):
+            # 0, [min, max+1) -> first column, keep the whole range
+            data.filters = {
+                "filter": ("f1", (train_df[:, 0].min(), train_df[:, 0].max() + 1))
+            }
+            data.setup(self.args)
+
+            # should just keep all (since we're keeping the whole range)
+            true_train_filter = {"filter": np.full(train_df.shape[0], True, dtype=bool)}
+            test_filters_equal(true_train_filter, data.train_filters)
+
+            # 0, [max+1, max+2) -> first column, include nothing
+            maxval = train_df[:, 0].max()
+            data.filters = {"filter": ("f1", (maxval + 1, maxval + 2))}
+            data.setup(self.args)
+
+            # should just keep all (since we're keeping the whole range)
+
+            true_train_filter = {
+                "filter": np.full(train_df.shape[0], False, dtype=bool)
+            }
+            test_filters_equal(true_train_filter, data.train_filters)
+
+        with self.subTest("Multiple Column + Exact"):
+            # match first column first row, but not the second (so nothing should match)
+            data.filters = {"filter": (["f1", "f2"], [train_df[0, 0], -train_df[1, 0]])}
+            data.setup(self.args)
+
+            true_train_filter = {
+                "filter": np.full(train_df.shape[0], False, dtype=bool)
+            }
+            test_filters_equal(true_train_filter, data.train_filters)
+
+            # match first column first row, AND the second (so one should match)
+            data.filters = {"filter": (["f1", "f2"], [train_df[0, 0], train_df[0, 1]])}
+            data.setup(self.args)
+
+            f = np.full(train_df.shape[0], False, dtype=bool)
+            f[0] = True
+            true_train_filter = {"filter": f}
+            test_filters_equal(true_train_filter, data.train_filters)
+
+        with self.subTest("Multiple Filters"):
+            data.filters = {
+                "filter1": ("f1", train_df[0, 0]),
+                "filter2": ("f2", train_df[0, 1]),
+            }
+            data.setup(self.args)
+
+            # should just keep the first value
+            f = np.full(train_df.shape[0], False, dtype=bool)
+            f[0] = True
+            true_train_filter = {"filter1": f, "filter2": f}
+            test_filters_equal(true_train_filter, data.train_filters)
+
+            data.filters = {
+                "filter1": ("f1", train_df[0, 0]),
+                "filter2": ("f2", train_df[1, 1]),
+            }
+            data.setup(self.args)
+
+            # should just keep the first value
+            f1 = np.full(train_df.shape[0], False, dtype=bool)
+            f2 = f1.copy()
+            f1[0] = True
+            f2[1] = True
+
+            true_train_filter = {"filter1": f1, "filter2": f2}
+            test_filters_equal(true_train_filter, data.train_filters)

@@ -209,12 +209,15 @@ def load_static_features(
         bin_cols_mapping = {
             "SEX": {"Male": 0, "Female": 1},
             "KNOWN_DECEASED": {"Not Known Deceased": 0, "Known Deceased": 1},
+            "ETHNICITY": {
+                "Not Hispanic or Latino": 0,
+                "Hispanic or Latino": 1,
+            },
         }
         static_df = static_df.replace(bin_cols_mapping)
 
         cols_to_onehot += [
             "RACE",  # white, other, multiple races, etc.
-            "ETHNICITY",  # yes/no hispanic/latino
             # "PCP_PROVIDER_TYPE",
         ]
 

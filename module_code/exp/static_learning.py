@@ -1,7 +1,7 @@
 from argparse import Namespace
 from functools import reduce
 import pickle
-from typing import Any, Callable, List, Tuple, Union
+from typing import Any, Callable, List, Tuple, Union, Dict
 import cloudpickle  # Allows serializing functions
 import pandas as pd
 from os.path import join
@@ -42,9 +42,7 @@ def combine_filters(
     return (listify(f1_cols) + listify(f2_cols), listify(f1_vals) + listify(f2_vals))
 
 
-def static_learning(args: Namespace):
-    # need to update CRRTDataModule
-    # TODO: this can be cleaned up /maybe moved and then names passed as flag to select?
+def generate_filters() -> Dict[str, Tuple[str, int]]:
     # these filters will be passed to `SklearnCRRTDataModule.get_filter`
     disease_filter_args = {  # filter based on disease status
         "heart": ("heart_pt_indicator", 1),
@@ -55,31 +53,54 @@ def static_learning(args: Namespace):
             [0, 0, 0],
         ),
     }
-    demo_filter_args = {  # filter based on demographic
+    sex_filter_args = {  # filter based on demographic
         "female": ("SEX", 1),
         "male": ("SEX", 0),
     }
-    # these are pulled from descriptive_report.ipynb, maybe make it auto?
-    for race in [
-        "American Indian or Alaska Native",
-        "Asian",
-        "Black or African American",
-        "Multiple Races",
-        "Native Hawaiian or Other Pacific Islander",
-        "Other",
-        "Patient Refused",
-        "Unknown",
-        "White or Caucasian",
-    ]:
-        demo_filter_args[race] = (f"RACE_{race}", 1)
-    cartesian_product = {
-        f"{demo}_{dz}": combine_filters(demo_args, dz_args)
-        for demo, demo_args in demo_filter_args.items()
-        for dz, dz_args in disease_filter_args.items()
+    age_filter_args = {  # age groups every decade until 120 years
+        f"age_{range[0]}_to_{range[1]}": ("AGE", range)
+        for range in [(n, min(n + 10, 120)) for n in range(0, 120, 10)]
     }
-    filters = {**disease_filter_args, **demo_filter_args, **cartesian_product}
+    ethnicity_filter_args = {
+        name: ("ETHNICITY", i)
+        for i, name in enumerate(["Not Hispanic or Latino", "Hispanic or Latino"])
+    }
+    race_filter_args = {
+        race: (f"RACE_{race}", 1)
+        # TODO: pulled from descriptive_report.ipynb, maybe make it auto?
+        for race in [
+            "American Indian or Alaska Native",
+            "Asian",
+            "Black or African American",
+            "Multiple Races",
+            "Native Hawaiian or Other Pacific Islander",
+            "Other",
+            "Patient Refused",
+            "Unknown",
+            "White or Caucasian",
+        ]
+    }
+    # cartesian_product = {
+    #     f"{demo}_{dz}": combine_filters(demo_args, dz_args)
+    #     for demo, demo_args in demo_filter_args.items()
+    #     for dz, dz_args in disease_filter_args.items()
+    # }
+    filters = {
+        **disease_filter_args,
+        **age_filter_args,
+        **sex_filter_args,
+        **race_filter_args,
+        **ethnicity_filter_args,
+        # **cartesian_product,
+    }
+    return filters
 
-    data = SklearnCRRTDataModule.from_argparse_args(args, filters=filters)
+
+def static_learning(args: Namespace):
+    # need to update CRRTDataModule
+    # TODO: this can be cleaned up /maybe moved and then names passed as flag to select?
+
+    data = SklearnCRRTDataModule.from_argparse_args(args, filters=generate_filters())
 
     # Pass the original datasets split pt_ids if doing rolling window analysis
     if args.slide_window_by:

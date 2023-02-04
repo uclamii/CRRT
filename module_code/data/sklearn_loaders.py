@@ -1,6 +1,5 @@
 from argparse import ArgumentParser, Namespace
 from functools import reduce
-from lib2to3.pgen2.token import OP
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
@@ -169,23 +168,27 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
     def get_filter(
         df: pd.DataFrame,
         cols: Union[str, List[str]],
-        vals: Union[Any, List[Any]],
+        vals: Union[Any, List[Union[int, str, Tuple[int, int]]]],
         combine: str = "AND",
     ) -> pd.Series:
+        def apply_check(col: str, val: Union[int, str, Tuple[int, int]]) -> pd.Series:
+            if isinstance(val, tuple):  # assumes [a, b)
+                assert len(val) == 2, "Tuple passed isn't length two [a, b)."
+                return (df[cols] >= val[0]) & (df[cols] < val[1])
+            return df[col] == val
+
         if isinstance(cols, list):
             assert isinstance(vals, list) and len(vals) == len(
                 cols
             ), "cols don't match vals for getting filters."
-            lambda_fns = map(
-                lambda col_val: df[col_val[0]] == col_val[1], zip(cols, vals)
-            )
+            lambda_fns = map(lambda col_val: apply_check(*col_val), zip(cols, vals))
             # roll up the functions
             if combine == "AND":
                 return reduce(lambda f1, f2: f1 & f2, lambda_fns)
             else:  # OR
                 return reduce(lambda f1, f2: f1 | f2, lambda_fns)
 
-        return df[cols] == vals
+        return apply_check(cols, vals)
 
     def get_post_split_transform(
         self, train: DataLabelTuple, reference_cols_mask: Optional[List[bool]] = None
