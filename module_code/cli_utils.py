@@ -43,6 +43,11 @@ def add_global_args(
         help="Path to directory that contains the data table files for control cohort at UCLA.",
     )
     p.add_argument(
+        "--cedars-crrt-data-dir",
+        type=str,
+        help="Path to directory that contains the data table files for CRRT cohort at Cedars.",
+    )
+    p.add_argument(
         "--preprocessed-df-file",
         type=str,
         help="Name of file that contains a serialized DataFrame of the preprocessed raw data.",
