@@ -100,7 +100,14 @@ def get_time_window_mask(
     )
 
     # filter to ensure all patients have X days of data needed to aggregate (static)
-    time_window = time_window[time_window["Window End"] <= window_dates["End Date"]]
+    cutoff = window_dates["End Date"]
+    if slide_window_by:
+        # When the patients are controls the end date == start date (or 0 days on CRRT)
+        no_crrt = (outcomes_df["CRRT Total Days"] == 0).values
+        # Need to slide the end date as well (it's artificial anyway)
+        # Or else, the window will be empty when we slide since
+        cutoff[no_crrt] += timedelta(days=slide_window_by)
+    time_window = time_window[time_window["Window End"] <= cutoff]
 
     # starts: list of all corresponding start dates to the windows, window start = list of all starts, window end = list of all ends (same size) per patient
     return time_window.groupby("IP_PATIENT_ID").agg(tuple).applymap(list)

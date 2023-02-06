@@ -1,3 +1,4 @@
+from argparse import ArgumentParser
 from os.path import join
 from os import getcwd
 import sys
@@ -6,6 +7,7 @@ sys.path.insert(0, join(getcwd(), "module_code"))
 
 from cli_utils import load_cli_args, init_cli_args
 from data.load import (
+    load_static_features,
     process_and_serialize_raw_data,
     get_preprocessed_df_path,
 )
@@ -13,10 +15,23 @@ from data.load import (
 
 def main():
     load_cli_args()
-    args = init_cli_args()
-    cohort = "ucla_crrt"
-    process_and_serialize_raw_data(args, get_preprocessed_df_path(args, cohort), cohort)
+    p = ArgumentParser()
+    p.add_argument("--cohort", type=str, help="Name of cohort to run preprocessing on.")
+    args = init_cli_args(p)
+
+    process_and_serialize_raw_data(
+        args, get_preprocessed_df_path(args, args.cohort), args.cohort
+    )
+
+    # Also do static data.
+    cohort_data_dir = getattr(args, f"{args.cohort}_data_dir")
+    path = join(cohort_data_dir, f"static_data.{args.serialization}")
+    static_features = load_static_features(cohort_data_dir).set_index("IP_PATIENT_ID")
+    serialize_fn = getattr(static_features, f"to_{args.serialization}")
+    serialize_fn(path)
 
 
 if __name__ == "__main__":
+    # Run with:  python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_control
+    # sys.argv += ["--cohort", "ucla_control"]
     main()

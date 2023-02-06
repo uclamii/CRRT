@@ -1,6 +1,5 @@
 from argparse import ArgumentParser, Namespace
 from functools import reduce
-from lib2to3.pgen2.token import OP
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
@@ -80,9 +79,31 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             args, self.train_val_cohort, reference_cols
         )
 
+        # its the same for all the sequences, just take one
+        # y = y.groupby("IP_PATIENT_ID").last()
+
+        # Load other dataset if applicable and align columns
+        if self.train_val_cohort != self.eval_cohort:
+            X_eval, y_eval = self.load_data_and_additional_preproc(
+                args, self.eval_cohort, reference_cols
+            )
+            # combine columns (outer join)
+            all_columns = X.columns.union(X_eval.columns)
+            # make sure columns in are availabl exist here (but they're all missing)
+            # the missing values will be simple imputed (ctn) and 0 imputed (nan)
+            # by the serialized transform function
+            # ref: https://stackoverflow.com/a/30943503/1888794
+            X = X.reindex(columns=all_columns)
+            X_eval = X_eval.reindex(columns=all_columns)
+
         #### Columns ####
-        # Needs to come after reference cols are potentially set
-        # need to save this before feature selection for sliding window analysis
+        """
+        Needs to come after:
+          reference cols are potentially set
+          potentially aligning columns with the eval dataset
+        Needs to come before:
+          feature selection for sliding window analysis
+        """
         self.columns = X.columns
         self.categorical_columns = X.filter(
             regex=CATEGORICAL_COL_REGEX, axis=1
@@ -90,16 +111,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # set this here instead of init so that outcome col isn't included
         self.ctn_columns = X.columns.difference(self.categorical_columns)
 
-        # its the same for all the sequences, just take one
-        # y = y.groupby("IP_PATIENT_ID").last()
-
         split_args = [X, y, reference_ids]
         if self.train_val_cohort != self.eval_cohort:
-            X_eval, y_eval = self.load_data_and_additional_preproc(
-                args, self.eval_cohort, reference_cols
-            )
             split_args += [X_eval, y_eval]
-
         X_y_tuples = self.split_dataset(*split_args)
         split_names = list(X_y_tuples.keys())
 
@@ -154,23 +168,27 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
     def get_filter(
         df: pd.DataFrame,
         cols: Union[str, List[str]],
-        vals: Union[Any, List[Any]],
+        vals: Union[Any, List[Union[int, str, Tuple[int, int]]]],
         combine: str = "AND",
     ) -> pd.Series:
+        def apply_check(col: str, val: Union[int, str, Tuple[int, int]]) -> pd.Series:
+            if isinstance(val, tuple):  # assumes [a, b)
+                assert len(val) == 2, "Tuple passed isn't length two [a, b)."
+                return (df[cols] >= val[0]) & (df[cols] < val[1])
+            return df[col] == val
+
         if isinstance(cols, list):
             assert isinstance(vals, list) and len(vals) == len(
                 cols
             ), "cols don't match vals for getting filters."
-            lambda_fns = map(
-                lambda col_val: df[col_val[0]] == col_val[1], zip(cols, vals)
-            )
+            lambda_fns = map(lambda col_val: apply_check(*col_val), zip(cols, vals))
             # roll up the functions
             if combine == "AND":
                 return reduce(lambda f1, f2: f1 & f2, lambda_fns)
             else:  # OR
                 return reduce(lambda f1, f2: f1 | f2, lambda_fns)
 
-        return df[cols] == vals
+        return apply_check(cols, vals)
 
     def get_post_split_transform(
         self, train: DataLabelTuple, reference_cols_mask: Optional[List[bool]] = None

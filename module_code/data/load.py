@@ -63,7 +63,7 @@ def load_outcomes(
     Given higher granularity, so we include a binary outcome (recommend crrt).
     Filters: no pediatric patient outcomes, patients with malformed outcome (i.e. 0 or >1 of the 4 outcomes indicated).
     """
-    
+
     loading_message("Outcomes")
     outcomes_df = read_excel(
         join(raw_data_dir, outcome_file), sheet_name="2015-2021 YTD"
@@ -76,7 +76,9 @@ def load_outcomes(
     #### Filtering ####
 
     # For patients with duplicated start dates, take the sample with greatest end date
-    outcomes_df = outcomes_df.sort_values(by=['IP_PATIENT_ID', 'End Date']).drop_duplicates(subset=['IP_PATIENT_ID', 'Start Date'], keep='last')
+    outcomes_df = outcomes_df.sort_values(
+        by=["IP_PATIENT_ID", "End Date"]
+    ).drop_duplicates(subset=["IP_PATIENT_ID", "Start Date"], keep="last")
 
     # Each row should have exactly 1 1.0 value (one-hot of the 4 cols)
     exactly_one_outcome_mask = outcomes_df[outcome_cols].fillna(0).sum(axis=1) == 1
@@ -124,7 +126,7 @@ def construct_outcomes(procedures_df: DataFrame, merge_on: List[str]) -> DataFra
                 # they should not go on crrt and did not
                 "recommend_crrt": 0,
                 # because they never went on crrt theres 0 days and no prev treatments
-                "Days on CRRT": 0,
+                "CRRT Total Days": 0,
                 "Num Prev CRRT Treatments": 0,
                 # TODO: does it make sense to have this anymore?
                 # crrt_year=lambda row: DatetimeIndex(row["PROCEDURE_DATE"]).year,
@@ -171,22 +173,40 @@ def load_static_features(
         cols_to_onehot.append("ALLERGEN_ID")
 
     if "Patient_Demographics.txt" in static_features:
-        static_df = static_df.rename(
-            {
-                # CONTROLS
-                "GENDER": "SEX",
-                "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
-                "VITAL_STATUS": "KNOWN_DECEASED",
+        collapse_ethnicity_map = {  # Collapse everything to (Not) Hisp/Lat
+            "Not Hispanic or Latino": [
+                "Choose Not to Answer",
+                "Patient Refused",
+                "Unknown",
+            ],
+            "Hispanic or Latino": [
+                "Mexican, Mexican American, Chicano/a",
+                "Hispanic/Spanish origin Other",
+                "Puerto Rican",
+                "Cuban",
+            ],
+        }
+        column_alignment = {
+            # CONTROLS
+            "GENDER": "SEX",
+            "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
+            "VITAL_STATUS": "KNOWN_DECEASED",
 
-                # CEDARS
+            # CEDARS
                 'CURRENT_AGE': "AGE",
                 'RACE_1': 'RACE',
                 'ETHNIC_GROUP': 'ETHNICITY',
                 'LIVING_STATUS': 'KNOWN_DECEASED',
                 "CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
-            },
-            axis=1,
-        )
+        }
+        static_df = static_df.rename(column_alignment, axis=1).replace(
+            {
+                "ETHNICITY": {
+                    col: collapsed_name
+                    for collapsed_name, cols in collapse_ethnicity_map.items()
+                    for col in cols
+                }
+            }
 
         static_df = align_cedars_demographics(static_df)
     
@@ -201,12 +221,15 @@ def load_static_features(
                                "Alive": 0, # Cedars
                                "Deceased": 1 # Cedars 
                                }
+            "ETHNICITY": {
+                "Not Hispanic or Latino": 0,
+                "Hispanic or Latino": 1,
+            },
         }
         static_df = static_df.replace(bin_cols_mapping)
 
         cols_to_onehot += [
             "RACE",  # white, other, multiple races, etc.
-            "ETHNICITY",  # yes/no hispanic/latino
             # "PCP_PROVIDER_TYPE",
         ]
 
@@ -356,9 +379,7 @@ def merge_features_with_outcome(
 def process_and_serialize_raw_data(
     args: Namespace, preprocessed_df_path: str, cohort: str
 ) -> DataFrame:
-    logging.info(
-        f"Preprocessed file {preprocessed_df_path} does not exist! Creating..."
-    )
+    logging.info(f"Creating preprocessed file {preprocessed_df_path}!")
     merge_on = ["IP_PATIENT_ID", "Start Date"]
     start = timer()
     # Dynamically get the correct function in this module based on the cohort
@@ -394,15 +415,16 @@ def load_data(args: Namespace, cohort: str) -> DataFrame:
         cohort_data_dir = getattr(args, f"{cohort}_data_dir")
         path = join(cohort_data_dir, f"static_data.{args.serialization}")
         try:
-            df = deserialize_fn(path)
+            static_features = deserialize_fn(path)
         except IOError:
             static_features = load_static_features(cohort_data_dir).set_index(
                 "IP_PATIENT_ID"
             )
-            # Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
-            df = df.join(static_features, how="inner")
-            serialize_fn = getattr(df, f"to_{args.serialization}")
+            serialize_fn = getattr(static_features, f"to_{args.serialization}")
             serialize_fn(path)
+
+        # Merge would mess it up since static doesn't have UNIVERSAL_TIME_COL_NAME, join will broadcast.
+        df = df.join(static_features, how="inner")
 
     return adhoc_preprocess_data(df, args)
 

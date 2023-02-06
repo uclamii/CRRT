@@ -3,7 +3,7 @@ import inspect
 from os.path import isfile
 import sys
 import yaml
-from typing import Union, List
+from typing import Optional, Union, List
 
 from data.argparse_utils import YAMLStringDictToDict
 from data.torch_loaders import TorchCRRTDataModule
@@ -201,34 +201,49 @@ def load_cli_args(args_options_path: str = "options.yml"):
                 sys.argv += [f"--{k}", str(v)]
 
 
-def init_cli_args() -> Namespace:
+def remove_help_action(p: ArgumentParser) -> ArgumentParser:
+    """
+    Help action will conflict with child parsers and subsequent suparsers.
+    This allows us to get rid of it no matter what the parent was initialized with.
+    """
+    help_action = next(  # ref: https://stackoverflow.com/a/7125547/1888794
+        (action for action in p._actions if action.dest == "help"), None
+    )
+    if help_action is not None:
+        p._remove_action(help_action)
+
+    # return p
+
+
+def init_cli_args(p: Optional[ArgumentParser] = None) -> Namespace:
     """
     Parse commandline args needed to run experiments.
     Basically mostly hyperparams.
+    Word for the wise: probabaly just use `click` in the future instead of `argparse`.
     """
-    p = ArgumentParser()
-    p = add_global_args(p)
+    if p is None:
+        p = ArgumentParser(add_help=False)
+    else:  # Manually get rid of help action if it exists (causes conflict)
+        remove_help_action(p)
+    global_p = add_global_args(p)
 
+    # Ref: passing global args through https://stackoverflow.com/a/56595689/1888794
+    parser_main = ArgumentParser(parents=[global_p])
     # Allows subcommands, so args are only added based on the command
     # Ref: https://docs.python.org/3/library/argparse.html#sub-commands
-    subparsers = p.add_subparsers(dest="model_type", help="Model types.")
-    dynamic_parser = subparsers.add_parser("dynamic", help="Dynamic Model")
-    # add global args instead of parenting bc defaults and actions are shared by ref
-    # there will be conflicts with the subparsers and overwriting help and defaults.
-    # Ref: https://stackoverflow.com/a/62906328/1888794
-    dynamic_parser = add_global_args(dynamic_parser, suppress_default=True)
-    # add args for pytorch lightning datamodule
+    subparsers = parser_main.add_subparsers(dest="model_type", help="Model types.")
+    dynamic_parser = subparsers.add_parser(
+        "dynamic", help="Dynamic Model", parents=[global_p]
+    )
     dynamic_parser = TorchCRRTDataModule.add_data_args(dynamic_parser)
-    # add args for pytorch lightning model
     dynamic_parser = LongitudinalModel.add_model_args(dynamic_parser)
 
-    static_parser = subparsers.add_parser("static", help="Static Model")
-    static_parser = add_global_args(static_parser, suppress_default=True)
-    # add args for pytorch lightning datamodule
+    static_parser = subparsers.add_parser(
+        "static", help="Static Model", parents=[global_p]
+    )
     static_parser = SklearnCRRTDataModule.add_data_args(static_parser)
-    # add args for pytorch lightning model
     static_parser = StaticModel.add_model_args(static_parser)
 
-    # return p.parse_args()
+    # return parser_main.parse_args()
     # Ignore unrecognized args
-    return p.parse_known_args()[0]
+    return parser_main.parse_known_args()[0]
