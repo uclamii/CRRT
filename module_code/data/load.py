@@ -63,7 +63,7 @@ def load_outcomes(
     Given higher granularity, so we include a binary outcome (recommend crrt).
     Filters: no pediatric patient outcomes, patients with malformed outcome (i.e. 0 or >1 of the 4 outcomes indicated).
     """
-
+    
     loading_message("Outcomes")
     outcomes_df = read_excel(
         join(raw_data_dir, outcome_file), sheet_name="2015-2021 YTD"
@@ -139,7 +139,6 @@ def construct_outcomes(procedures_df: DataFrame, merge_on: List[str]) -> DataFra
 
     return outcomes.set_index(merge_on)
 
-
 def load_static_features(
     raw_data_dir: str,
     static_features: List[str] = [
@@ -167,35 +166,60 @@ def load_static_features(
             ].set_index("ALLERGEN_ID")
             allergen_code_to_description_mapping.to_csv(allergen_code_mapping_fname)
             # drop allergen description since we won't be using it
-        static_df.drop("DESCRIPTION", axis=1)
+        static_df = static_df.drop("DESCRIPTION", axis=1)
 
         cols_to_onehot.append("ALLERGEN_ID")
 
     if "Patient_Demographics.txt" in static_features:
         static_df = static_df.rename(
             {
+                # CONTROLS
                 "GENDER": "SEX",
                 "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
                 "VITAL_STATUS": "KNOWN_DECEASED",
+
+                # CEDARS
+                'CURRENT_AGE': "AGE",
+                'RACE_1': 'RACE',
+                'ETHNIC_GROUP': 'ETHNICITY',
+                'LIVING_STATUS': 'KNOWN_DECEASED',
+                "CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
             },
             axis=1,
         )
-        static_df = map_provider_id_to_type(static_df, raw_data_dir)
+
+        static_df = align_cedars_demographics(static_df)
+    
+        static_df = static_df.drop('PCP_IP_PROVIDER_ID', axis=1, errors="ignore")
+        # static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
         # explicitly mapping here instead of numerical encoding automatically so that you know which is which when referencing outputs/data/etc.
         bin_cols_mapping = {
-            "SEX": {"Male": 0, "Female": 1},
-            "KNOWN_DECEASED": {"Not Known Deceased": 0, "Known Deceased": 1},
+            "SEX": {"Male": 0, "Female": 1}, 
+            "KNOWN_DECEASED": {"Not Known Deceased": 0, 
+                               "Known Deceased": 1,
+                               "Alive": 0, # Cedars
+                               "Deceased": 1 # Cedars 
+                               }
         }
         static_df = static_df.replace(bin_cols_mapping)
 
         cols_to_onehot += [
             "RACE",  # white, other, multiple races, etc.
             "ETHNICITY",  # yes/no hispanic/latino
-            "PCP_PROVIDER_TYPE",
+            # "PCP_PROVIDER_TYPE",
         ]
 
     if "Social_History.txt" in static_features:
+        static_df = static_df.rename(
+            {
+                # CEDARS
+                "TOBACCO_USE": "TOBACCO_USER",
+                "SMOKING_TOBACCO_USE": "SMOKING_TOB_STATUS",
+            },
+            axis=1,
+        )
+
         cols_to_onehot += ["TOBACCO_USER", "SMOKING_TOB_STATUS"]
 
     # will aggregate if there's more than one entry per pateint.
@@ -204,6 +228,33 @@ def load_static_features(
 
     return static_df
 
+def align_cedars_demographics(static_df: DataFrame) -> DataFrame:
+    """
+    Some ad-hoc preprocessing specifically to align Cedars with UCLA data
+    """
+
+    # Cleanup RACE for Cedars data. Combine RACE_2 and RACE_3 into multiple races
+    if 'RACE_2' in static_df.columns and 'RACE_3' in static_df.columns:
+        static_df.loc[static_df['RACE_2'].notna() | static_df['RACE_3'].notna(), 'RACE'] = 'Multiple Races'
+        static_df = static_df.replace({'RACE': {'White': 'White or Caucasian', 'Patient Declined': 'Patient Refused'}}) 
+        static_df = static_df.drop(["RACE_2","RACE_3"], axis=1)
+
+    # Stored as integers. Cast to float for consistency with UCLA
+    static_df["AGE"] = static_df["AGE"].astype(float)
+
+    # One case of 'Unknown', but UCLA has only Male/Female
+    static_df = static_df[~((static_df['SEX'] != 0) & (static_df['SEX'] != 1))]
+
+    # Some null ages and races in Cedars, but not in UCLA
+    static_df = static_df.dropna(subset=["AGE","RACE"])
+    
+    # Cedars does not include 'Latino' with 'Hispanic'
+    static_df = static_df.replace({'ETHNICITY': {'Hispanic': 'Hispanic or Latino', 
+                                            'Non-Hispanic': 'Not Hispanic or Latino', 
+                                            'Patient Declined': 'Not Hispanic or Latino', 
+                                            'Unknown':'Not Hispanic or Latino'}}) 
+
+    return static_df
 
 def map_provider_id_to_type(
     static_df: DataFrame,
