@@ -25,6 +25,7 @@ FILE_NAMES = {
     "rx": "Medications.txt",
     "vitals": "Flowsheet_Vitals.txt",
     "dx": "Encounter_Diagnoses.txt",
+    "enc": "Encounters.txt"
 }
 
 
