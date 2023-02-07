@@ -5,7 +5,7 @@ from os.path import join
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Dict, List, Optional
-from pandas import DataFrame, DatetimeIndex, read_excel, read_csv, merge
+from pandas import DataFrame, DatetimeIndex, read_excel, merge
 
 # for serialization on the fly
 import pandas as pd
@@ -141,6 +141,7 @@ def construct_outcomes(procedures_df: DataFrame, merge_on: List[str]) -> DataFra
 
     return outcomes.set_index(merge_on)
 
+
 def load_static_features(
     raw_data_dir: str,
     static_features: List[str] = [
@@ -179,10 +180,9 @@ def load_static_features(
                 "Choose Not to Answer",
                 "Patient Refused",
                 "Unknown",
-
                 # Cedars
                 "Non-Hispanic",
-                "Patient Declined"
+                "Patient Declined",
             ],
             "Hispanic or Latino": [
                 # UCLA
@@ -190,9 +190,8 @@ def load_static_features(
                 "Hispanic/Spanish origin Other",
                 "Puerto Rican",
                 "Cuban",
-
                 # Cedars
-                "Hispanic"
+                "Hispanic",
             ],
         }
         column_alignment = {
@@ -200,12 +199,11 @@ def load_static_features(
             "GENDER": "SEX",
             "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
             "VITAL_STATUS": "KNOWN_DECEASED",
-
             # CEDARS
-            'CURRENT_AGE': "AGE",
-            'RACE_1': 'RACE',
-            'ETHNIC_GROUP': 'ETHNICITY',
-            'LIVING_STATUS': 'KNOWN_DECEASED',
+            "CURRENT_AGE": "AGE",
+            "RACE_1": "RACE",
+            "ETHNIC_GROUP": "ETHNICITY",
+            "LIVING_STATUS": "KNOWN_DECEASED",
             "CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
         }
         static_df = static_df.rename(column_alignment, axis=1).replace(
@@ -219,17 +217,18 @@ def load_static_features(
         )
         static_df = align_cedars_demographics(static_df)
 
-        static_df = static_df.drop('PCP_IP_PROVIDER_ID', axis=1, errors="ignore")
+        static_df = static_df.drop("PCP_IP_PROVIDER_ID", axis=1, errors="ignore")
         # static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
         # explicitly mapping here instead of numerical encoding automatically so that you know which is which when referencing outputs/data/etc.
         bin_cols_mapping = {
-            "SEX": {"Male": 0, "Female": 1}, 
-            "KNOWN_DECEASED": {"Not Known Deceased": 0, 
-                               "Known Deceased": 1,
-                               "Alive": 0, # Cedars
-                               "Deceased": 1 # Cedars 
-                               },
+            "SEX": {"Male": 0, "Female": 1},
+            "KNOWN_DECEASED": {
+                "Not Known Deceased": 0,
+                "Known Deceased": 1,
+                "Alive": 0,  # Cedars
+                "Deceased": 1,  # Cedars
+            },
             "ETHNICITY": {
                 "Not Hispanic or Latino": 0,
                 "Hispanic or Latino": 1,
@@ -260,30 +259,43 @@ def load_static_features(
 
     return static_df
 
+
 def align_cedars_demographics(static_df: DataFrame) -> DataFrame:
     """
     Some ad-hoc preprocessing specifically to align Cedars with UCLA data
     """
 
-    # Cedars has duplicated rows 
+    # Cedars has duplicated rows
     static_df = static_df.drop_duplicates()
 
     # Cleanup RACE for Cedars data. Combine RACE_2 and RACE_3 into multiple races
     if "RACE_2" in static_df.columns and "RACE_3" in static_df.columns:
-        static_df.loc[static_df["RACE_2"].notna() | static_df["RACE_3"].notna(), "RACE"] = "Multiple Races"
-        static_df = static_df.replace({"RACE": {"White": "White or Caucasian", "Patient Declined": "Patient Refused"}}) 
-        static_df = static_df.drop(["RACE_2","RACE_3"], axis=1)
+        static_df.loc[
+            static_df["RACE_2"].notna() | static_df["RACE_3"].notna(), "RACE"
+        ] = "Multiple Races"
+        static_df = static_df.replace(
+            {
+                "RACE": {
+                    "White": "White or Caucasian",
+                    "Patient Declined": "Patient Refused",
+                }
+            }
+        )
+        static_df = static_df.drop(["RACE_2", "RACE_3"], axis=1)
 
     # Stored as integers. Cast to float for consistency with UCLA
     static_df["AGE"] = static_df["AGE"].astype(float)
-    
+
     # One case of 'Unknown', but UCLA has only Male/Female
-    static_df = static_df[~((static_df["SEX"] != "Male") & (static_df["SEX"] != "Female"))]
+    static_df = static_df[
+        ~((static_df["SEX"] != "Male") & (static_df["SEX"] != "Female"))
+    ]
 
     # Some null ages and races in Cedars, but not in UCLA
-    static_df = static_df.dropna(subset=["AGE","RACE"])
+    static_df = static_df.dropna(subset=["AGE", "RACE"])
 
     return static_df
+
 
 def map_provider_id_to_type(
     static_df: DataFrame,
@@ -487,4 +499,4 @@ def preproc_cedars_crrt(args: Namespace, merge_on: List[str]) -> DataFrame:
         args.post_start_delta,
         args.time_window_end,
         args.slide_window_by,
-    )  
+    )
