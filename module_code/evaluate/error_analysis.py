@@ -76,7 +76,7 @@ def get_pvalue_and_effect_size(
                 # Ref: https://www.statology.org/two-sample-t-test-python/
                 return (
                     "t_ind",
-                    test_reject(ttest_ind(dist_error, dist_true, random_state=seed)[1]),
+                    ttest_ind(dist_error, dist_true, random_state=seed)[1],
                     effect_size_name,
                     effect_size,
                 )
@@ -84,7 +84,7 @@ def get_pvalue_and_effect_size(
             # Ref: https://www.statology.org/mann-whitney-u-test-python/
             return (
                 "mannwhitney_u",
-                test_reject(mannwhitneyu(dist_error, dist_true)[1]),
+                mannwhitneyu(dist_error, dist_true)[1],
                 effect_size_name,
                 effect_size,
             )
@@ -94,7 +94,7 @@ def get_pvalue_and_effect_size(
             # Ref: https://www.statology.org/fishers-exact-test-python/
             return (
                 "fisher_exact",
-                test_reject(fisher_exact(contingency)[1]),
+                fisher_exact(contingency)[1],
                 "cohens_h",
                 cohens_h(contingency),
             )
@@ -102,7 +102,7 @@ def get_pvalue_and_effect_size(
         # although technically frequencies/counts must be > 5 there's no other python alternatives for multicategorical
         return (
             "chi2",
-            test_reject(chi2_contingency(contingency)[1]),
+            chi2_contingency(contingency)[1],
             "cramers_v",
             cramers_corrected_stat(contingency),
         )
@@ -138,6 +138,7 @@ def model_randomness(
         comparison_name = f"{comparison[0]}_vs_{comparison[1]}"
         table = {
             "Test Statistic": {},
+            "p-value": {},
             "Reject H0": {},
             "Measure Name": {},
             "Effect Size": {},
@@ -148,14 +149,15 @@ def model_randomness(
             dist_true = subsets[true_type][:, colidx]
             (
                 stat_name,
-                reject_h0,
+                p_value,
                 effect_size_name,
                 effect_size,
             ) = get_pvalue_and_effect_size(
                 dist_error, dist_true, error_type, true_type, seed
             )
             table["Test Statistic"][(comparison_name, coln)] = stat_name
-            table["Reject H0"][(comparison_name, coln)] = reject_h0
+            table["p-value"][(comparison_name, coln)] = p_value
+            table["Reject H0"][(comparison_name, coln)] = test_reject(p_value)
             table["Measure Name"][(comparison_name, coln)] = effect_size_name
             table["Effect Size"][(comparison_name, coln)] = effect_size
     # To read: read_csv("tmp.txt", index_col=[0,1])
