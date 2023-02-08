@@ -258,7 +258,6 @@ def create_and_serialize_medication_mapping_dict(
         sorted_results = []
         partial_results = []
         single_results = []
-        set_results = []
 
         if reference in mapping.keys():
             print("Already have mapping: ", reference, " -> ", mapping[reference])
@@ -280,7 +279,6 @@ def create_and_serialize_medication_mapping_dict(
             sorted_results.append(fuzz.token_sort_ratio(reference, comparator))
             partial_results.append(fuzz.partial_ratio(reference, comparator))
             single_results.append(fuzz.ratio(reference, comparator))
-            set_results.append(fuzz.partial_token_sort_ratio(reference, comparator))
 
         sorted_distances = (
             DataFrame({"comparator": comparators, "similarity": sorted_results})

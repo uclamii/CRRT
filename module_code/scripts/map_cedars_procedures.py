@@ -20,8 +20,12 @@ def trace_code_connections(starting_code: str, mapping_df: DataFrame) -> List[st
     Perform a depth first search to find all codes that a given code is 'connected' to
     """
 
-    visited_codes = []
-    codes_to_visit = [starting_code]
+    cpt = CPT()
+
+    found_code = "na"
+
+    visited_codes = set()
+    codes_to_visit = {starting_code}
 
     while len(codes_to_visit) > 0:
 
@@ -29,44 +33,43 @@ def trace_code_connections(starting_code: str, mapping_df: DataFrame) -> List[st
 
         if current_code not in visited_codes:
 
+            cpt_code = cpt.get_cpt_section(current_code)
+
+            # If there is one cpt code, store it
+            if cpt_code["sect"] != "na":
+                found_code = current_code
+                break
+
             # get related codes from OT_PROC_CODE when the current code is PROC_CODE
             # AND get related codes from PROC_CODE when the current code is OT_PROC_CODE
             neighbours_forwards = mapping_df[mapping_df["PROC_CODE"] == current_code][
                 "OT_PROC_CODE"
             ].to_list()
             neighbours_backwards = mapping_df[
-                mapping_df["OT_CODE_TYPE"] == current_code
+                mapping_df["OT_PROC_CODE"] == current_code
             ]["PROC_CODE"].to_list()
 
-            codes_to_visit = codes_to_visit + neighbours_forwards + neighbours_backwards
+            neighbours_forwards = [x for x in neighbours_forwards if str(x) != "nan"]
+            neighbours_backwards = [x for x in neighbours_forwards if str(x) != "nan"]
+            additions = set(neighbours_backwards).union(set(neighbours_forwards))
 
-            visited_codes.append(current_code)
-    return visited_codes
+            codes_to_visit = set(codes_to_visit).union(additions)
+
+            visited_codes.add(current_code)
+
+    return found_code
 
 
 def create_and_serialize_cpt_mapping_dict(
     args: Namespace, procedures: DataFrame, mapping_df: DataFrame
 ) -> None:
-    cpt = CPT()
 
     original_codes = []
     cpt_codes = []
 
     for i, code in enumerate(procedures["PROC_CODE"].unique()):
-
         # Trace all connected codes
-        neighbours = trace_code_connections(code, mapping_df)
-        found_code = "na"
-        # Look through all neighbors
-        for neighbour in neighbours:
-
-            # check if it is a cpt code. if it is not, this will return 'na'
-            cpt_code = cpt.get_cpt_section(neighbour)
-
-            # If there is one cpt code, store it
-            if cpt_code["sect"] != "na":
-                found_code = neighbour
-                break
+        found_code = trace_code_connections(code, mapping_df)
 
         original_codes.append(code)
         cpt_codes.append(found_code)
