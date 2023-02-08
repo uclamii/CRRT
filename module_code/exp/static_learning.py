@@ -57,9 +57,9 @@ def generate_filters() -> Dict[str, Tuple[str, int]]:
         "female": ("SEX", 1),
         "male": ("SEX", 0),
     }
-    age_filter_args = {  # age groups every decade until 120 years
+    age_filter_args = {  # age groups every decade until 100 years (we filter over 100)
         f"age_{range[0]}_to_{range[1]}": ("AGE", range)
-        for range in [(n, min(n + 10, 120)) for n in range(0, 120, 10)]
+        for range in [(n, min(n + 10, 100)) for n in range(0, 100, 10)]
     }
     ethnicity_filter_args = {
         name: ("ETHNICITY", i)
