@@ -160,8 +160,10 @@ def split_sbp_and_dbp(vitals_df: DataFrame) -> DataFrame:
 def calculate_bmi(vitals_df: DataFrame) -> DataFrame:
     """
     UCLA has BMI as a function of height and weight. Cedars does not explicitly have this but can calculate
-    Rule: for each patient, if they had weight and height measured at the same time, calculate BMI for that time.
-        strict with time because measurements can vary if they are taken multiple times a dat
+    Rule: for each patient, if they had weight and height measured, for each weight, calculate BMI based on the height
+            measured at the nearest time.
+
+    Note this doesn't have any optimization and iterates through all patients - might be able to make it faster
     """
 
     if "BMI" in vitals_df["VITAL_SIGN_TYPE"].unique():
