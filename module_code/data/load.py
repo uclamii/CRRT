@@ -6,6 +6,7 @@ from pathlib import Path
 from timeit import default_timer as timer
 from typing import Dict, List, Optional
 from pandas import DataFrame, DatetimeIndex, read_excel, merge
+import numpy as np
 
 # for serialization on the fly
 import pandas as pd
@@ -183,6 +184,7 @@ def load_static_features(
                 # Cedars
                 "Non-Hispanic",
                 "Patient Declined",
+                np.nan,
             ],
             "Hispanic or Latino": [
                 # UCLA
@@ -216,6 +218,19 @@ def load_static_features(
             }
         )
         static_df = align_cedars_demographics(static_df)
+
+        # Do this after aligning cedars
+        collapse_race_map = {"Unknown": ["Other", "Patient Refused", np.nan]}
+
+        static_df = static_df.replace(
+            {
+                "RACE": {
+                    col: collapsed_name
+                    for collapsed_name, cols in collapse_race_map.items()
+                    for col in cols
+                }
+            }
+        )
 
         static_df = static_df.drop("PCP_IP_PROVIDER_ID", axis=1, errors="ignore")
         # static_df = map_provider_id_to_type(static_df, raw_data_dir)
@@ -292,7 +307,7 @@ def align_cedars_demographics(static_df: DataFrame) -> DataFrame:
     ]
 
     # Some null ages and races in Cedars, but not in UCLA
-    static_df = static_df.dropna(subset=["AGE", "RACE"])
+    # static_df = static_df.dropna(subset=["AGE", "RACE"])
 
     return static_df
 

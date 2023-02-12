@@ -2,7 +2,7 @@ import logging
 from pickle import load
 from os.path import isfile, join
 from typing import Optional, Union
-from pandas import DataFrame, to_numeric, concat
+from pandas import DataFrame, to_numeric, concat, to_datetime
 from hcuppy.ccs import CCSEngine
 from hcuppy.cpt import CPT
 
@@ -167,43 +167,57 @@ def calculate_bmi(vitals_df: DataFrame) -> DataFrame:
     if "BMI" in vitals_df["VITAL_SIGN_TYPE"].unique():
         return vitals_df
 
+    # New DataFrame for BMI
+    bmi_df = DataFrame({column: {} for column in vitals_df.columns})
+
     # Get rows that document weight
-    weight = vitals_df.loc[vitals_df["VITAL_SIGN_TYPE"] == "Weight"].copy()
+    weights = vitals_df.loc[vitals_df["VITAL_SIGN_TYPE"] == "Weight"].copy()
+    weights["VITAL_SIGN_TAKEN_TIME"] = to_datetime(weights["VITAL_SIGN_TAKEN_TIME"])
 
     # Get rows that document height
-    height = vitals_df.loc[vitals_df["VITAL_SIGN_TYPE"] == "Height"].copy()
+    heights = vitals_df.loc[vitals_df["VITAL_SIGN_TYPE"] == "Height"].copy()
+    heights["VITAL_SIGN_TAKEN_TIME"] = to_datetime(heights["VITAL_SIGN_TAKEN_TIME"])
 
-    # Merge weight and height only for measurements that occured for the same patients at the same time
-    # Since weight and height are located the same column (VITAL_SIGN_VALUE), we must remember weight as VITAL_SIGN_VALUE_x and height as VITAL_SIGN_VALUE_y
-    bmi = weight.merge(
-        height, on=["IP_PATIENT_ID", "VITAL_SIGN_TAKEN_TIME"], how="inner"
-    )
+    # Iterate through all unique patients that have a height measurement
+    for patient in heights["IP_PATIENT_ID"].unique():
 
-    # Calculate BMI as 703*weight_in_lb/height_in_inch^2
-    bmi["BMI"] = 703 / 16 * bmi["VITAL_SIGN_VALUE_x"] / bmi["VITAL_SIGN_VALUE_y"] ** 2
+        # Get the height and weight measurements for that patient
+        patient_heights = heights[heights["IP_PATIENT_ID"] == patient].copy()
+        patient_weights = weights[weights["IP_PATIENT_ID"] == patient].copy()
 
-    # Drop unecessary columns due to the merge. Can probably be done in a cleaner way
-    bmi = bmi.drop(
-        [
-            "INPATIENT_DATA_ID_y",
-            "VITAL_SIGN_TYPE_y",
-            "VITAL_SIGN_TYPE_x",
-            "VITAL_SIGN_VALUE_y",
-            "VITAL_SIGN_VALUE_x",
-        ],
-        axis=1,
-    )
+        # Iterate through all weights for that unique patient
+        for j, weight in patient_weights.iterrows():
 
-    # Rename to align with the original dataframe
-    bmi = bmi.rename(
-        columns={"INPATIENT_DATA_ID_x": "INPATIENT_DATA_ID", "BMI": "VITAL_SIGN_VALUE"}
-    )
+            # Get the height measurement from the closest day to the weight measurement
+            patient_heights["TIME_DIFF"] = (
+                patient_heights["VITAL_SIGN_TAKEN_TIME"]
+                - weight["VITAL_SIGN_TAKEN_TIME"]
+            )
+            selected_height = patient_heights[
+                patient_heights["TIME_DIFF"] == patient_heights["TIME_DIFF"].min()
+            ]
 
-    # Fill out a the VITAL_SIGN_TYPE column with 'BMI' since all values are BMI
-    bmi["VITAL_SIGN_TYPE"] = "BMI"
+            # Calculate BMI as 703*weight_in_lb/height_in_inch^2
+            bmi = (
+                703
+                / 16
+                * weight["VITAL_SIGN_VALUE"]
+                / selected_height["VITAL_SIGN_VALUE"] ** 2
+            )
+
+            new_row = {
+                "IP_PATIENT_ID": weight["IP_PATIENT_ID"],
+                "INPATIENT_DATA_ID": weight["INPATIENT_DATA_ID"],
+                "VITAL_SIGN_TAKEN_TIME": weight["VITAL_SIGN_TAKEN_TIME"],
+                "VITAL_SIGN_TYPE": "BMI",
+                "VITAL_SIGN_VALUE": bmi,
+            }
+            new_row = DataFrame(new_row)
+
+            bmi_df = concat([bmi_df, new_row])
 
     # Return concatenation
-    return concat([vitals_df, bmi])
+    return concat([vitals_df, bmi_df])
 
 
 def load_medications(
