@@ -1,5 +1,5 @@
 from argparse import ArgumentParser, Namespace
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 from os.path import join, dirname
 from os import makedirs
 import numpy as np
@@ -113,6 +113,12 @@ PLOT_MAP = {
     "lime_explain": lime_explainability,
     "feature_importance": feature_importance,
 }
+
+MODEL_LEVEL_METRICS = [
+    "error_viz",
+    "randomness",
+    "feature_importance",
+] + list(CURVE_MAP.keys())
 
 
 class StaticModel(AbstractModel, HyperparametersMixin):
@@ -376,12 +382,13 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 if filter.sum():  # don't do anything if there's no one represented
                     # If we don't ask for values sklearn will complain it was fitted without feature names
                     self.eval_and_log(
-                        X[filter.values],
-                        y[filter.values],
-                        pred_probas[filter.values],
-                        preds[filter.values],
+                        X,
+                        y,
+                        pred_probas,
+                        preds,
                         prefix=f"{self.static_model.hparams['modeln']}_{stage}_{filter_n}_",
                         categorical_columns=categorical_columns,
+                        subgroup_filter=filter.values,
                     )
 
         return metrics
@@ -394,9 +401,21 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         preds: pd.Series,
         prefix: str,
         categorical_columns: Union[List[str], Index],
+        subgroup_filter: Optional[pd.Series] = None,
         decision_threshold: float = 0.5,
     ) -> Dict[str, Any]:
         """Logs metrics and curves/plots."""
+        if subgroup_filter is not None:  # apply filter here
+            data = data[subgroup_filter]
+            labels = labels[subgroup_filter]
+            preds = preds[subgroup_filter]
+            pred_probas = pred_probas[subgroup_filter]
+
+        def eval_metric_on_subgroup(name: str) -> bool:
+            # if it's not a subgroup we don't care, evaluate
+            # if it's a subgroup then we skip model-level metrics (like feature importance)
+            return (subgroup_filter is None) or (name not in MODEL_LEVEL_METRICS)
+
         metrics = None
 
         # log predict probabilities
@@ -418,11 +437,14 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.hparams["metric_names"],
                 self.static_model.metrics,
             ):
-                name = f"{prefix}_{metric_name}"
-                if labels_are_homog and metric_name not in metrics_ok_homog:
-                    metrics[name] = np.nan
-                else:
-                    metrics[name] = metric_fn(labels, pred_probas, decision_threshold)
+                if eval_metric_on_subgroup(metric_name):
+                    name = f"{prefix}_{metric_name}"
+                    if labels_are_homog and metric_name not in metrics_ok_homog:
+                        metrics[name] = np.nan
+                    else:
+                        metrics[name] = metric_fn(
+                            labels, pred_probas, decision_threshold
+                        )
 
             if mlflow.active_run():
                 mlflow.log_metrics(metrics)
@@ -433,10 +455,11 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.hparams["curve_names"],
                 self.static_model.curves,
             ):
-                figure = curve.from_predictions(labels, pred_probas).plot().figure_
-                name = f"{prefix}_{curve_name}"
-                figure.suptitle(name)
-                log_figure(figure, join("img_artifacts", "curves", f"{name}.png"))
+                if eval_metric_on_subgroup(curve_name):
+                    figure = curve.from_predictions(labels, pred_probas).plot().figure_
+                    name = f"{prefix}_{curve_name}"
+                    figure.suptitle(name)
+                    log_figure(figure, join("img_artifacts", "curves", f"{name}.png"))
 
         # Other plots
         if self.static_model.hparams["plot_names"] is not None:
@@ -453,14 +476,19 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
             }
 
             for analysis_fn in self.static_model.plots:
-                if (
-                    not self.static_model.use_shap_for_feature_importance
-                    and analysis_fn == shap_explainability
-                ):
-                    new_args = args.copy()
-                    new_args["top_k"] = None
-                    analysis_fn(**new_args)
-                else:
-                    analysis_fn(**args)
+                # reverse lookup the name from the function
+                name = next(key for key, fn in PLOT_MAP.items() if fn == analysis_fn)
+                if eval_metric_on_subgroup(name):
+                    # don't use shap for feature importance if:
+                    # we say not to or if we're in a subgroup
+                    if (
+                        not self.static_model.use_shap_for_feature_importance
+                        or subgroup_filter is not None
+                    ) and analysis_fn == shap_explainability:
+                        new_args = args.copy()
+                        new_args["top_k"] = None
+                        analysis_fn(**new_args)
+                    else:
+                        analysis_fn(**args)
 
         return metrics
