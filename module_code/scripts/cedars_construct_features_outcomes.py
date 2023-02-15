@@ -24,7 +24,7 @@ mapping = {
     "karumanchi_00001867_flowsheet_vitals - anonymized.xlsx": "Flowsheet_Vitals.txt",
     "karumanchi_00001867_labs - anonymized.xlsx": "Labs.txt",
     "karumanchi_00001867_medications - anonymized.xlsx": "Medications.txt",
-    "karumanchi_00001867_problem_list - anonymized.xlsx": "Problem_Lists.txt",  # 'Problem_List_Diagnoses.txt'
+    "karumanchi_00001867_problem_list - anonymized - updated.xlsx": "Problem_Lists.txt",  # 'Problem_List_Diagnoses.txt'
     "karumanchi_00001867_procedures - anonymized.xlsx": "Procedures.txt",
     "karumanchi_00001867_social_hx - anonymized (1).xlsx": "Social_History.txt",
     "karumanchi_00001867_proc_code_bridge_table.xlsx": "Procedures_Code_Mapping.txt",
