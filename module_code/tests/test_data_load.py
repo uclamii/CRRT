@@ -59,21 +59,28 @@ class TestSklearnLoaders(unittest.TestCase):
             index=self.multiindex_from_indices(indices),
         )
 
-    def load_data_side_effect(self, *args, **kwargs):
-        """Load depending on cohort, make up data."""
-        # have same columns different indices. required to have outcome
-        if args[-1] == "ucla_crrt" or kwargs.get("cohort", "") == "ucla_control":
-            return self.create_mock_df(
-                self.feature_names, list(range(1, self.nsamples, 2))
-            )  # indices odd
-        elif args[-1] == "ucla_control" or kwargs.get("cohort", "") == "ucla_control":
-            return self.create_mock_df(
-                self.feature_names, list(range(0, self.nsamples, 2))
-            )  # indices even
+    def load_data_side_effect(self, feature_names: List[List[str]], nsamples: int):
+        def load_data(*args, **kwargs):
+            """Load depending on cohort, make up data."""
+            # have same columns different indices. required to have outcome
+            if args[-1] == "ucla_crrt" or kwargs.get("cohort", "") == "ucla_control":
+                return self.create_mock_df(
+                    feature_names[0], list(range(1, nsamples, 2))
+                )  # indices odd
+            elif (
+                args[-1] == "ucla_control" or kwargs.get("cohort", "") == "ucla_control"
+            ):
+                return self.create_mock_df(
+                    feature_names[1], list(range(0, nsamples, 2))
+                )  # indices even
+
+        return load_data
 
     @patch("module_code.data.sklearn_loaders.load_data")
     def test_same_train_eval_cohorts(self, mock_load_data_fn):
-        mock_load_data_fn.side_effect = self.load_data_side_effect
+        mock_load_data_fn.side_effect = self.load_data_side_effect(
+            [self.feature_names, self.feature_names], self.nsamples
+        )
 
         with self.assertRaises(AssertionError):  # need test_split_size
             SklearnCRRTDataModule(
@@ -95,9 +102,15 @@ class TestSklearnLoaders(unittest.TestCase):
         for split in ["train", "val", "test"]:  # crrt is all odd indices
             self.assertTrue(all(data.split_pt_ids[split] % 2 == 1))
 
+    @patch(
+        "module_code.data.sklearn_loaders.SklearnCRRTDataModule.get_post_split_transform"
+    )
     @patch("module_code.data.sklearn_loaders.load_data")
-    def test_different_train_eval_cohorts(self, mock_load_data):
-        mock_load_data.side_effect = self.load_data_side_effect
+    def test_different_train_eval_cohorts(self, mock_load_data, mock_transforms):
+        mock_load_data.side_effect = self.load_data_side_effect(
+            [self.feature_names, self.feature_names], self.nsamples
+        )
+        mock_transforms.side_effect = lambda x: lambda y: y
         data = SklearnCRRTDataModule(
             SEED,
             outcome_col_name=self.outcome_col_name,
@@ -112,16 +125,44 @@ class TestSklearnLoaders(unittest.TestCase):
         self.assertTrue(all(data.split_pt_ids["test"] % 2 == 0))
 
         # the entire test X, y should be the entire ucla control
-        df = self.load_data_side_effect("ucla_control")
+        df = self.load_data_side_effect(
+            [self.feature_names, self.feature_names], self.nsamples
+        )("ucla_control")
         for df1, df2 in [
             (df.drop(self.outcome_col_name, axis=1), data.test[0]),
             (df[self.outcome_col_name], data.test[1]),
         ]:
             np.testing.assert_array_equal(df1, df2)
 
+        with self.subTest("Different Columns"):
+            # Keep only one column. add one new column
+            ucla_control_cols = self.feature_names[:1] + ["somerandomcolumn"]
+            all_cols = self.feature_names + ["somerandomcolumn"]
+            mock_load_data.side_effect = self.load_data_side_effect(
+                [self.feature_names, ucla_control_cols],
+                self.nsamples,
+            )
+            data = SklearnCRRTDataModule(
+                SEED,
+                outcome_col_name=self.outcome_col_name,
+                train_val_cohort="ucla_crrt",
+                eval_cohort="ucla_control",
+                val_split_size=self.val_split_size,
+            )
+            data.setup(self.args)
+            for split in ["train", "val"]:  # crrt is all odd indices
+                self.assertTrue(all(data.split_pt_ids[split] % 2 == 1))
+            # control is even indices
+            self.assertTrue(all(data.split_pt_ids["test"] % 2 == 0))
+
+            # should be outer join
+            np.testing.assert_array_equal(all_cols, data.test[0].columns)
+
     @patch("module_code.data.sklearn_loaders.load_data")
     def test_filters(self, mock_load_data):
-        mock_load_data.side_effect = self.load_data_side_effect
+        mock_load_data.side_effect = self.load_data_side_effect(
+            [self.feature_names, self.feature_names], self.nsamples
+        )
 
         data = SklearnCRRTDataModule(
             SEED,
