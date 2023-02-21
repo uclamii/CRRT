@@ -459,7 +459,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                     figure = curve.from_predictions(labels, pred_probas).plot().figure_
                     name = f"{prefix}_{curve_name}"
                     figure.suptitle(name)
-                    log_figure(figure, join("img_artifacts", "curves", f"{name}.png"))
+                    log_figure(figure, join("img_artifacts", "curves", name))
 
         # Other plots
         if self.static_model.hparams["plot_names"] is not None:

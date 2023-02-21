@@ -49,7 +49,7 @@ def error_visualization(
             leaf_selector=leaf_id, top_k_features=5
         )
         log_figure(
-            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists.png")
+            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists")
         )
     except RuntimeError:
         # all predictions are correct no error analysis, skip
