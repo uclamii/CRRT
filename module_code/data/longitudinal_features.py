@@ -319,6 +319,10 @@ def map_encounter_to_patient(
     raw_data_dir: str, df: DataFrame, encounter_file: str = FILE_NAMES["enc"]
 ):
 
+    # skip if all patient ids exist
+    if not df["IP_PATIENT_ID"].isnull().values.any():
+        return df
+
     loading_message("Encounters")
     enc_df = read_files_and_combine([encounter_file], raw_data_dir)
 
@@ -408,7 +412,7 @@ def load_problems(
     problems_feature = aggregate_cat_feature(
         problems_df,
         agg_on="pr_CCS_CODE",
-        time_col="NOTED_DATE",
+        time_col="DATE_OF_ENTRY",
         time_interval=time_interval,
         time_window=time_window,
     )
