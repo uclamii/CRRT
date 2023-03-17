@@ -216,6 +216,16 @@ class StaticModel(AbstractModel, HyperparametersMixin):
             )
         save_fn(join(serialized_static_model_dir, STATIC_MODEL_FNAME))
 
+    @classmethod
+    def load(cls, serialized_static_model_dir: str) -> "StaticModel":
+        """Different from load model, this creates an instance from the pickle instead of just loading in"""
+        hparams = load_hparams_from_yaml(
+            join(serialized_static_model_dir, STATIC_HPARAM_FNAME)
+        )
+        static_model = cls(**hparams)
+        static_model.load_model(serialized_static_model_dir)
+        return static_model
+
     def load_model(self, serialized_static_model_dir: str) -> None:
         """Loads model regardless if saved locally or in mlflow."""
         # Load Hparams (hparams is a property not an attribute so I cannot assign it directly)
@@ -298,9 +308,12 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     Implements fit and transform.
     """
 
-    def __init__(self, seed: int, **kwargs):
+    def __init__(self, seed: int, static_model: StaticModel = None, **kwargs):
         self.seed = seed
-        self.static_model = StaticModel(seed=seed, **kwargs)
+        if static_model is not None:
+            self.static_model = static_model
+        else:
+            self.static_model = StaticModel(seed=seed, **kwargs)
 
     @classmethod
     def from_argparse_args(
@@ -310,6 +323,26 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
     def log_model(self):
         self.static_model.log_model()
+
+    @classmethod
+    def load(cls, args: Namespace, serialized_model_path: str) -> "CRRTStaticPredictor":
+        """Different from load model, this creates an instance from the pickle instead of just loading in"""
+
+        """
+        Somethign is broken with pyyaml: https://github.com/yaml/pyyaml/issues/266
+        The fix is to change `load_hparams_from_yaml` utility itself.
+        ```
+        with fs.open(config_yaml, "r") as fp:
+            # hparams = yaml.full_load(fp)
+            hparams = yaml.load(fp, Loader=yaml.Loader)
+        ```
+        """
+        # hparams = load_hparams_from_yaml(
+        # join(serialized_model_path, STATIC_HPARAM_FNAME)
+        # )
+        # return cls(hparams["seed"], static_model=static_model)
+        static_model = StaticModel.load(serialized_model_path)
+        return cls.from_argparse_args(args, static_model=static_model)
 
     def load_model(self, serialized_static_model_path: str) -> None:
         self.static_model.load_model(serialized_static_model_path)
@@ -419,11 +452,11 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         metrics = None
 
         # log predict probabilities
-        predict_probas_file = join("predict_probas", f"{prefix}_predict_probas.pkl")
-        makedirs(dirname(predict_probas_file), exist_ok=True)  # ensure dir exists
-        pred_probas.to_pickle(predict_probas_file)
-        if mlflow.active_run():
-            mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
+        # predict_probas_file = join("predict_probas", f"{prefix}_predict_probas.pkl")
+        # makedirs(dirname(predict_probas_file), exist_ok=True)  # ensure dir exists
+        # pred_probas.to_pickle(predict_probas_file)
+        # if mlflow.active_run():
+        #     mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
 
         pred_probas = pred_probas.values
 
@@ -448,6 +481,8 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
             if mlflow.active_run():
                 mlflow.log_metrics(metrics)
+            else:
+                print(metrics)
 
         # Curves/Plots
         if self.static_model.hparams["curve_names"] is not None:

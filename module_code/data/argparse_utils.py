@@ -4,6 +4,25 @@ from json import loads
 import re
 
 
+def string_list_to_list(
+    list_string: str, choices: Optional[List[str]] = None, convert: type = str
+) -> List:
+    # strip any {<space>, ', " [, ]}" and then split by comma
+    values = re.sub(r"[ '\"\[\]]", "", list_string).split(",")
+    if choices:
+        values = [convert(x) for x in values if x in choices]
+    else:
+        values = [convert(x) for x in values]
+    return values
+
+
+def string_dict_to_dict(dict_string: str, choices: Optional[List[str]] = None) -> List:
+    dict_obj = loads(dict_string.replace("'", '"'))
+    if choices:  # filter down
+        dict_obj = {key: value for key, value in dict_obj.items() if key in choices}
+    return dict_obj
+
+
 def YAMLStringListToList(convert: type = str, choices: Optional[List[str]] = None):
     class ConvertToList(Action):
         """Takes a comma separated list (no spaces) from command line and parses into list of some type (Default str)."""
@@ -15,19 +34,9 @@ def YAMLStringListToList(convert: type = str, choices: Optional[List[str]] = Non
             values: str,
             option_string: Optional[str] = None,
         ):
-            # strip any {<space>, ', " [, ]}" and then split by comma
-            values = re.sub(r"[ '\"\[\]]", "", values).split(",")
-            if choices:
-                values = [convert(x) for x in values if x in choices]
-            else:
-                values = [convert(x) for x in values]
-            setattr(namespace, self.dest, values)
+            setattr(namespace, self.dest, string_list_to_list(values, choices, convert))
 
     return ConvertToList
-
-
-def dict_string_to_json(dict_string: str) -> Dict:
-    return loads(dict_string.replace("'", '"'))
 
 
 def YAMLStringDictToDict(choices: Optional[List[str]] = None):
@@ -41,14 +50,6 @@ def YAMLStringDictToDict(choices: Optional[List[str]] = None):
             dict_string: str,
             option_string: Optional[str] = None,
         ):
-            if choices:
-                dict_obj = {
-                    key: value
-                    for key, value in dict_string_to_json(dict_string).items()
-                    if key in choices
-                }
-            else:
-                dict_obj = dict_string_to_json(dict_string)
-            setattr(namespace, self.dest, dict_obj)
+            setattr(namespace, self.dest, string_dict_to_dict(dict_string, choices))
 
     return ConvertToDict
