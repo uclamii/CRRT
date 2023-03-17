@@ -128,6 +128,12 @@ def add_global_args(
         default=None,
         help="If doing rolling window analysis, we want to know the maximum slide, AKA the maximum days we allow someone to be on CRRT for this analysis. E.g., if max slide is 3 days, it doesn't make sense to include someone who has 20 days on CRRT for the rolling analysis as their outcome is so much farther out.",
     )
+    time_p.add_argument(
+        "--min-days-on-crrt",
+        type=int,
+        default=0,
+        help="If subgrouping, we may want to know the minimum slide, AKA the minimum days we allow someone to be on CRRT for this analysis.",
+    )
 
     # Logging / Tracking
     logging_p = p.add_argument_group("Logging / Tracking")

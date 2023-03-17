@@ -9,7 +9,10 @@ def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
 
     # for sliding window analysis, we want to only keep patients with <= max_slide number of days on CRRT
     if args.max_days_on_crrt is not None:
-        df = df[df["CRRT Total Days"] <= args.max_days_on_crrt]
+        df = df[
+            (df["CRRT Total Days"] <= args.max_days_on_crrt)
+            & (df["CRRT Total Days"] >= args.min_days_on_crrt)
+        ]
 
     drop_columns = [
         "Month",
