@@ -68,7 +68,8 @@ def get_preprocessed_file_name(
     # time window
     fname += "_[startdate"
     if slide_window_by:
-        fname += f"+{slide_window_by}"
+        sign = "+" if slide_window_by > 0 else ""
+        fname += f"{sign}{slide_window_by}"
 
     if pre_start_delta:
         # subtracting the delta time
@@ -80,7 +81,8 @@ def get_preprocessed_file_name(
     else:
         fname += f"{time_window_end.replace(' ', '').lower()}"
     if slide_window_by:
-        fname += f"+{slide_window_by}"
+        sign = "+" if slide_window_by > 0 else ""
+        fname += f"{sign}{slide_window_by}"
 
     # Close
     fname += "]"

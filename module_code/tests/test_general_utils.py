@@ -139,3 +139,11 @@ class TestLoading(unittest.TestCase):
                 ),
                 "df_1Dagg_[startdate+1-1y3m14d,startdate+1].feather",
             )
+
+            # test negative slide
+            self.assertEqual(
+                get_preprocessed_file_name(
+                    pre_start_delta, None, time_interval, "Start Date", -1
+                ),
+                "df_1Dagg_[startdate-1-1y3m14d,startdate-1].feather",
+            )
