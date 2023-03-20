@@ -34,8 +34,6 @@ def generate_filters() -> Dict[str, Dict[str, Tuple[str, Union[int, Tuple[int, i
             "Black or African American",
             "Multiple Races",
             "Native Hawaiian or Other Pacific Islander",
-            "Other",
-            "Patient Refused",
             "Unknown",
             "White or Caucasian",
         ]

@@ -131,7 +131,12 @@ def model_randomness(
     # A) mutually exclusive groups
     # B) sampling without replacement
     comparisons = [("fn", "tp"), ("fn", "tn"), ("fp", "tn"), ("fp", "tp")]
-    table = {}
+    table = {
+        "Test Statistic": {},
+        "Reject H0": {},
+        "Measure Name": {},
+        "Effect Size": {},
+    }
     for comparison in comparisons:
         error_type, true_type = comparison  # unpack
         # for each feature

@@ -143,6 +143,34 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
     def load_data_and_additional_preproc(
         self, args: Namespace, cohort: str, reference_cols=None
     ) -> Tuple[pd.DataFrame, pd.Series]:
+        """Wrapper function for loading multiple cohorts as one dataset"""
+
+        # convention for multiple cohorts to be split by a '+' symbol
+        cohort = cohort.split("+")
+        all_columns = pd.Index([])
+
+        X_all_cohorts = []
+        y_all_cohorts = []
+
+        for single_cohort in cohort:
+            X, y = self.single_cohort_load_data_and_additional_preproc(
+                args, single_cohort, reference_cols
+            )
+
+            # combine columns (outer join)
+            all_columns = all_columns.union(X.columns)
+
+            X_all_cohorts.append(X)
+            y_all_cohorts.append(y)
+
+        X_all_cohorts = [X.reindex(columns=all_columns) for X in X_all_cohorts]
+        X_all_cohorts = pd.concat(X_all_cohorts)
+        y_all_cohorts = pd.concat(y_all_cohorts)
+        return (X_all_cohorts, y_all_cohorts)
+
+    def single_cohort_load_data_and_additional_preproc(
+        self, args: Namespace, cohort: str, reference_cols=None
+    ) -> Tuple[pd.DataFrame, pd.Series]:
         preprocessed_df = load_data(args, cohort)
         X, y = (
             preprocessed_df.drop(self.outcome_col_name, axis=1),
@@ -282,10 +310,27 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # sample = [pt, treatment]
         # TODO: ensure patient is in same split
         # ensure data is split by patient
-        sample_ids = {"train_val": X.index.droplevel(["Start Date"]).unique().values}
+
+        # If aggregating over a time-interval, a new column "DATE" is introduced
+        if "DATE" in X.index.names:
+            sample_ids = {
+                "train_val": X.index.droplevel(["Start Date", "DATE"]).unique().values
+            }
+        else:
+            sample_ids = {
+                "train_val": X.index.droplevel(["Start Date"]).unique().values
+            }
+
         train_val_labels = y.groupby("IP_PATIENT_ID").first()
         if separate_eval_dataset:
-            sample_ids["eval"] = X_eval.index.droplevel(["Start Date"]).unique().values
+            if "DATE" in X_eval.index.names:
+                sample_ids["eval"] = (
+                    X_eval.index.droplevel(["Start Date", "DATE"]).unique().values
+                )
+            else:
+                sample_ids["eval"] = (
+                    X_eval.index.droplevel(["Start Date"]).unique().values
+                )
 
         if reference_ids is not None:  # filter id to the serialized ones
             # There are patients we don't want include:
@@ -382,13 +427,25 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         p.add_argument(
             "--train-val-cohort",
             type=str,
-            choices=["ucla_crrt", "ucla_control", "ucla_crrt+control", "cedars_crrt"],
+            choices=[
+                "ucla_crrt",
+                "ucla_control",
+                "ucla_crrt+control",
+                "cedars_crrt",
+                "ucla_crrt+cedars_crrt",
+            ],
             help="Name of cohort/dataset to use for training and validation.",
         )
         p.add_argument(
             "--eval-cohort",
             type=str,
-            choices=["ucla_crrt", "ucla_control", "ucla_crrt+control", "cedars_crrt"],
+            choices=[
+                "ucla_crrt",
+                "ucla_control",
+                "ucla_crrt+control",
+                "cedars_crrt",
+                "ucla_crrt+cedars_crrt",
+            ],
             help="Name of cohort/dataset to use for evaluation.",
         )
         return p

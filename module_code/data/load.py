@@ -5,7 +5,8 @@ from os.path import join
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Dict, List, Optional
-from pandas import DataFrame, DatetimeIndex, read_excel, read_csv, merge
+from pandas import DataFrame, DatetimeIndex, read_excel, merge
+import numpy as np
 
 # for serialization on the fly
 import pandas as pd
@@ -169,28 +170,43 @@ def load_static_features(
             ].set_index("ALLERGEN_ID")
             allergen_code_to_description_mapping.to_csv(allergen_code_mapping_fname)
             # drop allergen description since we won't be using it
-        static_df.drop("DESCRIPTION", axis=1)
+        static_df = static_df.drop("DESCRIPTION", axis=1)
 
         cols_to_onehot.append("ALLERGEN_ID")
 
     if "Patient_Demographics.txt" in static_features:
         collapse_ethnicity_map = {  # Collapse everything to (Not) Hisp/Lat
             "Not Hispanic or Latino": [
+                # UCLA
                 "Choose Not to Answer",
                 "Patient Refused",
                 "Unknown",
+                # Cedars
+                "Non-Hispanic",
+                "Patient Declined",
+                np.nan,
             ],
             "Hispanic or Latino": [
+                # UCLA
                 "Mexican, Mexican American, Chicano/a",
                 "Hispanic/Spanish origin Other",
                 "Puerto Rican",
                 "Cuban",
+                # Cedars
+                "Hispanic",
             ],
         }
         column_alignment = {
+            # CONTROLS
             "GENDER": "SEX",
             "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
             "VITAL_STATUS": "KNOWN_DECEASED",
+            # CEDARS
+            "CURRENT_AGE": "AGE",
+            "RACE_1": "RACE",
+            "ETHNIC_GROUP": "ETHNICITY",
+            "LIVING_STATUS": "KNOWN_DECEASED",
+            "CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
         }
         static_df = static_df.rename(column_alignment, axis=1).replace(
             {
@@ -201,14 +217,33 @@ def load_static_features(
                 }
             }
         )
-        # Excluding provider id if provided
+        static_df = align_cedars_demographics(static_df)
+
+        # Do this after aligning cedars
+        collapse_race_map = {"Unknown": ["Other", "Patient Refused", np.nan]}
+
+        static_df = static_df.replace(
+            {
+                "RACE": {
+                    col: collapsed_name
+                    for collapsed_name, cols in collapse_race_map.items()
+                    for col in cols
+                }
+            }
+        )
+
         static_df = static_df.drop("PCP_IP_PROVIDER_ID", axis=1, errors="ignore")
         # static_df = map_provider_id_to_type(static_df, raw_data_dir)
 
         # explicitly mapping here instead of numerical encoding automatically so that you know which is which when referencing outputs/data/etc.
         bin_cols_mapping = {
             "SEX": {"Male": 0, "Female": 1},
-            "KNOWN_DECEASED": {"Not Known Deceased": 0, "Known Deceased": 1},
+            "KNOWN_DECEASED": {
+                "Not Known Deceased": 0,
+                "Known Deceased": 1,
+                "Alive": 0,  # Cedars
+                "Deceased": 1,  # Cedars
+            },
             "ETHNICITY": {
                 "Not Hispanic or Latino": 0,
                 "Hispanic or Latino": 1,
@@ -222,11 +257,57 @@ def load_static_features(
         ]
 
     if "Social_History.txt" in static_features:
+        static_df = static_df.rename(
+            {
+                # CEDARS
+                "TOBACCO_USE": "TOBACCO_USER",
+                "SMOKING_TOBACCO_USE": "SMOKING_TOB_STATUS",
+            },
+            axis=1,
+        )
+
         cols_to_onehot += ["TOBACCO_USER", "SMOKING_TOB_STATUS"]
 
     # will aggregate if there's more than one entry per pateint.
     # this should only affect allergens, the other entries should not be affected
     static_df = onehot(static_df, cols_to_onehot, sum_across_patient=False)
+
+    return static_df
+
+
+def align_cedars_demographics(static_df: DataFrame) -> DataFrame:
+    """
+    Some ad-hoc preprocessing specifically to align Cedars with UCLA data
+    """
+
+    # Cedars has duplicated rows
+    static_df = static_df.drop_duplicates()
+
+    # Cleanup RACE for Cedars data. Combine RACE_2 and RACE_3 into multiple races
+    if "RACE_2" in static_df.columns and "RACE_3" in static_df.columns:
+        static_df.loc[
+            static_df["RACE_2"].notna() | static_df["RACE_3"].notna(), "RACE"
+        ] = "Multiple Races"
+        static_df = static_df.replace(
+            {
+                "RACE": {
+                    "White": "White or Caucasian",
+                    "Patient Declined": "Patient Refused",
+                }
+            }
+        )
+        static_df = static_df.drop(["RACE_2", "RACE_3"], axis=1)
+
+    # Stored as integers. Cast to float for consistency with UCLA
+    static_df["AGE"] = static_df["AGE"].astype(float)
+
+    # One case of 'Unknown', but UCLA has only Male/Female
+    static_df = static_df[
+        ~((static_df["SEX"] != "Male") & (static_df["SEX"] != "Female"))
+    ]
+
+    # Some null ages and races in Cedars, but not in UCLA
+    # static_df = static_df.dropna(subset=["AGE", "RACE"])
 
     return static_df
 
@@ -418,5 +499,19 @@ def preproc_ucla_control(args: Namespace, merge_on: List[str]) -> DataFrame:
         controls_window_size,
         None,
         "Start Date",
+        args.slide_window_by,
+    )
+
+
+def preproc_cedars_crrt(args: Namespace, merge_on: List[str]) -> DataFrame:
+    outcomes_df = load_outcomes(args.cedars_crrt_data_dir, group_by=merge_on)
+    return merge_features_with_outcome(
+        args.cedars_crrt_data_dir,
+        outcomes_df,
+        merge_on,
+        args.time_interval,
+        args.pre_start_delta,
+        args.post_start_delta,
+        args.time_window_end,
         args.slide_window_by,
     )

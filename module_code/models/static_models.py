@@ -4,6 +4,7 @@ from os.path import join, dirname
 from os import makedirs
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
@@ -44,7 +45,7 @@ from evaluate.error_viz import error_visualization
 from evaluate.error_analysis import model_randomness
 from evaluate.explainability import shap_explainability, lime_explainability
 from evaluate.feature_importance import feature_importance
-from evaluate.utils import log_figure
+from evaluate.utils import log_figure, bootstrap_metric, confidence_interval
 
 STATIC_MODEL_FNAME = "static_model.pkl"
 STATIC_HPARAM_FNAME = "static_hparams.yml"
@@ -156,6 +157,20 @@ class StaticModel(AbstractModel, HyperparametersMixin):
             raise ValueError(
                 "The {} is not a valid model type".format(self.hparams["modeln"])
             )
+
+        # hparams that can't be passed to rf are saved, causing issues in post-hoc testing
+        # this doesn't solve the root problem, but a temporary fix
+        if self.hparams["modeln"] in ["rf"]:
+            import inspect
+
+            valid_kwargs = inspect.signature(model_cls.__init__).parameters.copy()
+            data_kwargs = dict(
+                (name, self.hparams["model_kwargs"][name])
+                for name in valid_kwargs
+                if name in self.hparams["model_kwargs"]
+            )
+            return model_cls(**data_kwargs)
+
         return model_cls(**self.hparams["model_kwargs"])
 
     def configure_metrics(self, metric_names: List[str]) -> List[Callable]:
@@ -184,9 +199,15 @@ class StaticModel(AbstractModel, HyperparametersMixin):
 
     def log_model(self):
         """Log to MLFlow."""
+
         # Log hparams
-        hparams_file = join("static_model", STATIC_HPARAM_FNAME)
-        mlflow.log_dict(self.hparams, hparams_file)
+        # manually get path from uri and save using pytorch lightning
+        # windows has issues when using mlflow to save and load hyperparameters from yaml
+        hparam_path = mlflow.get_artifact_uri().split("file://")[1]
+        hparams_file = join(hparam_path, "static_model", STATIC_HPARAM_FNAME)
+        makedirs(dirname(hparams_file), exist_ok=True)
+        save_hparams_to_yaml(hparams_file, self.hparams)
+        # mlflow.log_dict(self.hparams, hparams_file)
 
         # Log model
         # Select which logging function from mlflow
@@ -228,6 +249,7 @@ class StaticModel(AbstractModel, HyperparametersMixin):
 
     def load_model(self, serialized_static_model_dir: str) -> None:
         """Loads model regardless if saved locally or in mlflow."""
+
         # Load Hparams (hparams is a property not an attribute so I cannot assign it directly)
         self._set_hparams(
             load_hparams_from_yaml(
@@ -379,6 +401,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         Can additionally pass filters for subsets to evaluate performance.
         The filters can be either the bool series filter itself, or a function that produces one given the df.
         """
+
         X, y = getattr(data, stage)
         if hasattr(data, "data_transform"):
             selected_columns_mask = data.data_transform.__self__.named_steps[
@@ -458,6 +481,13 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         # if mlflow.active_run():
         #     mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
 
+        # log labels for convenient post-hoc analysis if required
+        # if "test" in prefix:
+        #     labels_file = join("predict_probas", f"{prefix}_labels.pkl")
+        #     labels.to_pickle(labels_file)
+        #     if mlflow.active_run():
+        #         mlflow.log_artifact(labels_file, dirname(predict_probas_file))
+
         pred_probas = pred_probas.values
 
         labels_are_homog = len(labels.value_counts()) == 1
@@ -479,6 +509,35 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                             labels, pred_probas, decision_threshold
                         )
 
+                    if "test" in prefix:
+                        bootstrapped = bootstrap_metric(
+                            labels,
+                            pred_probas,
+                            metric_name,
+                            metric_fn,
+                            decision_threshold=decision_threshold,
+                            random_state=self.static_model.hparams["model_kwargs"][
+                                "random_state"
+                            ],
+                        )
+
+                        CI = confidence_interval(bootstrapped)
+                        metrics[name + "_CI_low"] = CI[0]
+                        metrics[name + "_CI_high"] = CI[1]
+
+                        bootstrapped = pd.Series(bootstrapped)
+                        bootstrapped_file = join(
+                            "bootstrapped", f"{name}_bootstrapped.pkl"
+                        )
+                        makedirs(
+                            dirname(bootstrapped_file), exist_ok=True
+                        )  # ensure dir exists
+                        bootstrapped.to_pickle(bootstrapped_file)
+                        if mlflow.active_run():
+                            mlflow.log_artifact(
+                                bootstrapped_file, dirname(bootstrapped_file)
+                            )
+
             if mlflow.active_run():
                 mlflow.log_metrics(metrics)
             else:
@@ -491,13 +550,16 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.curves,
             ):
                 if eval_metric_on_subgroup(curve_name):
-                    figure = curve.from_predictions(labels, pred_probas).plot().figure_
+                    # prevent a lot of figures from popping up on screen
+                    figure = curve.from_predictions(labels, pred_probas)
                     name = f"{prefix}_{curve_name}"
-                    figure.suptitle(name)
-                    log_figure(figure, join("img_artifacts", "curves", name))
+                    figure.figure_.suptitle(name)
+                    # log_figure(figure, join("img_artifacts", "curves", name))
+                    log_figure(figure.figure_, join("img_artifacts", "curves", name))
+                    plt.close()
 
         # Other plots
-        if self.static_model.hparams["plot_names"] is not None:
+        if self.static_model.plots is not None:
             args = {
                 "data": data.values,
                 "labels": labels.values,

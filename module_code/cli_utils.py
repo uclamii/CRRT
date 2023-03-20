@@ -43,6 +43,11 @@ def add_global_args(
         help="Path to directory that contains the data table files for control cohort at UCLA.",
     )
     p.add_argument(
+        "--cedars-crrt-data-dir",
+        type=str,
+        help="Path to directory that contains the data table files for CRRT cohort at Cedars.",
+    )
+    p.add_argument(
         "--preprocessed-df-file",
         type=str,
         help="Name of file that contains a serialized DataFrame of the preprocessed raw data.",
@@ -122,6 +127,12 @@ def add_global_args(
         type=int,
         default=None,
         help="If doing rolling window analysis, we want to know the maximum slide, AKA the maximum days we allow someone to be on CRRT for this analysis. E.g., if max slide is 3 days, it doesn't make sense to include someone who has 20 days on CRRT for the rolling analysis as their outcome is so much farther out.",
+    )
+    time_p.add_argument(
+        "--min-days-on-crrt",
+        type=int,
+        default=0,
+        help="If subgrouping, we may want to know the minimum slide, AKA the minimum days we allow someone to be on CRRT for this analysis.",
     )
 
     # Logging / Tracking
