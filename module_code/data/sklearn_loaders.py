@@ -124,7 +124,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             for split in split_names:
                 X = X_y_tuples[split][0]
                 filters = {
-                    k: self.get_filter(X, *args) for k, args in self.filters.items()
+                    k: self.get_filter(X, *args)
+                    for groupname, filter in self.filters.items()
+                    for k, args in filter.items()
                 }
                 setattr(self, f"{split}_filters", filters)
 
