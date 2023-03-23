@@ -121,6 +121,9 @@ MODEL_LEVEL_METRICS = [
     "feature_importance",
 ] + list(CURVE_MAP.keys())
 
+# Dont' want to do extensive evaluation on the validation or training set
+TEST_ONLY_METRICS = list(CURVE_MAP.keys()) + list(PLOT_MAP.keys())
+
 
 class StaticModel(AbstractModel, HyperparametersMixin):
     def __init__(
@@ -419,6 +422,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
         ## Evaluate on split of dataset (train, val, test) ##
         metrics = self.eval_and_log(
+            stage,
             X,
             y,
             pred_probas,
@@ -438,6 +442,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 if filter.sum():  # don't do anything if there's no one represented
                     # If we don't ask for values sklearn will complain it was fitted without feature names
                     self.eval_and_log(
+                        stage,
                         X,
                         y,
                         pred_probas,
@@ -451,6 +456,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
     def eval_and_log(
         self,
+        stage: str,
         data: pd.DataFrame,
         labels: pd.Series,
         pred_probas: pd.Series,
@@ -467,10 +473,16 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
             preds = preds[subgroup_filter]
             pred_probas = pred_probas[subgroup_filter]
 
-        def eval_metric_on_subgroup(name: str) -> bool:
+        def eval_conditions(name: str) -> bool:
             # if it's not a subgroup we don't care, evaluate
             # if it's a subgroup then we skip model-level metrics (like feature importance)
-            return (subgroup_filter is None) or (name not in MODEL_LEVEL_METRICS)
+            subgroup_eval_conditions = (subgroup_filter is None) or (
+                name not in MODEL_LEVEL_METRICS
+            )
+
+            # if the metric is test only then the stage should be test
+            stage_eval_conditions = (name not in TEST_ONLY_METRICS) or (stage == "test")
+            return subgroup_eval_conditions and stage_eval_conditions
 
         metrics = None
 
@@ -500,7 +512,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.hparams["metric_names"],
                 self.static_model.metrics,
             ):
-                if eval_metric_on_subgroup(metric_name):
+                if eval_conditions(metric_name):
                     name = f"{prefix}_{metric_name}"
                     if labels_are_homog and metric_name not in metrics_ok_homog:
                         metrics[name] = np.nan
@@ -549,7 +561,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.hparams["curve_names"],
                 self.static_model.curves,
             ):
-                if eval_metric_on_subgroup(curve_name):
+                if eval_conditions(curve_name):
                     # prevent a lot of figures from popping up on screen
                     figure = curve.from_predictions(labels, pred_probas)
                     name = f"{prefix}_{curve_name}"
@@ -575,7 +587,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
             for analysis_fn in self.static_model.plots:
                 # reverse lookup the name from the function
                 name = next(key for key, fn in PLOT_MAP.items() if fn == analysis_fn)
-                if eval_metric_on_subgroup(name):
+                if eval_conditions(name):
                     # don't use shap for feature importance if:
                     # we say not to or if we're in a subgroup
                     if (

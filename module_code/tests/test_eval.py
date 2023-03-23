@@ -136,11 +136,12 @@ class TestEvalModel(unittest.TestCase):
 
     @patch("module_code.models.static_models.PLOT_MAP")
     @patch("module_code.data.sklearn_loaders.load_data")
-    def test_model_only_eval(self, mock_load_data_fn, mock_plot_map):
+    def test_eval_conditions(self, mock_load_data_fn, mock_plot_map):
         mock_load_data_fn.side_effect = self.load_data_side_effect
         true_plot_map = {
             "randomness": MagicMock(name="model_randomness"),
             "shap_explain": MagicMock(name="shap_explain"),
+            "roc_curve": MagicMock(name="roc_curve"),
         }
         mock_plot_map.__getitem__.side_effect = true_plot_map.__getitem__
         mock_plot_map.items.side_effect = true_plot_map.items
@@ -151,7 +152,7 @@ class TestEvalModel(unittest.TestCase):
                 modeln="xgb",
                 metric_names=[],
                 curve_names=[],
-                plot_names=["randomness", "shap_explain"],
+                plot_names=["randomness", "shap_explain", "roc_curve"],
                 top_k_feature_importance=5,
                 model_kwargs={},
                 **self.data_args,
@@ -163,15 +164,26 @@ class TestEvalModel(unittest.TestCase):
                 eval_cohort="ucla_crrt",
                 val_split_size=self.val_split_size,
                 test_split_size=self.test_split_size,
-                filters={"f": (self.feature_names[0], (50, 100))},
+                filters={"group": {"f": (self.feature_names[0], (50, 100))}},
             )
             data.setup(args)
 
             model = CRRTStaticPredictor.from_argparse_args(args)
             model.fit(data)
 
+            # should not be called in train and val
             model.evaluate(data, "train")
+            self.assertEqual(0, true_plot_map["randomness"].call_count)
+            self.assertEqual(0, true_plot_map["shap_explain"].call_count)
+            self.assertEqual(0, true_plot_map["roc_curve"].call_count)
+            model.evaluate(data, "val")
+            self.assertEqual(0, true_plot_map["randomness"].call_count)
+            self.assertEqual(0, true_plot_map["shap_explain"].call_count)
+            self.assertEqual(0, true_plot_map["roc_curve"].call_count)
+
+            model.evaluate(data, "test")
             # this is model level should only be called once
             self.assertEqual(1, true_plot_map["randomness"].call_count)
+            self.assertEqual(1, true_plot_map["roc_curve"].call_count)
             # this is not model level, 1 for model, 1 for the 1 subgroup filter
             self.assertEqual(2, true_plot_map["shap_explain"].call_count)

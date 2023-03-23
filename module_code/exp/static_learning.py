@@ -88,10 +88,6 @@ def static_learning(args: Namespace):
         if not args.tune_n_trials and args.slide_window_by == 0:
             dump_artifacts_for_rolling_windows(data, model)
 
-        # Don't want to run extensive evaluation, just basic metrics for tuning/training
-        model.static_model.hparams["curve_names"] = None
-        model.static_model.hparams["error_analysis"] = None
-        model.static_model.hparams["top_k_feature_importance"] = None
         # informs tuning, different from testing/eval
         return model.evaluate(data, "val")
         # model.evaluate(data, "train")
