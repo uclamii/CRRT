@@ -184,7 +184,7 @@ class TestSklearnLoaders(unittest.TestCase):
 
         with self.subTest("Single Column + Exact"):
             # 0,0 : first row, first column
-            data.filters = {"filter": ("f1", train_df[0, 0])}
+            data.filters = {"group": {"filter": ("f1", train_df[0, 0])}}
             data.setup(self.args)
 
             # should just keep the first value
@@ -196,7 +196,9 @@ class TestSklearnLoaders(unittest.TestCase):
         with self.subTest("Single Column + Range"):
             # 0, [min, max+1) -> first column, keep the whole range
             data.filters = {
-                "filter": ("f1", (train_df[:, 0].min(), train_df[:, 0].max() + 1))
+                "group": {
+                    "filter": ("f1", (train_df[:, 0].min(), train_df[:, 0].max() + 1))
+                }
             }
             data.setup(self.args)
 
@@ -206,7 +208,7 @@ class TestSklearnLoaders(unittest.TestCase):
 
             # 0, [max+1, max+2) -> first column, include nothing
             maxval = train_df[:, 0].max()
-            data.filters = {"filter": ("f1", (maxval + 1, maxval + 2))}
+            data.filters = {"group": {"filter": ("f1", (maxval + 1, maxval + 2))}}
             data.setup(self.args)
 
             # should just keep all (since we're keeping the whole range)
@@ -218,7 +220,9 @@ class TestSklearnLoaders(unittest.TestCase):
 
         with self.subTest("Multiple Column + Exact"):
             # match first column first row, but not the second (so nothing should match)
-            data.filters = {"filter": (["f1", "f2"], [train_df[0, 0], -train_df[1, 0]])}
+            data.filters = {
+                "group": {"filter": (["f1", "f2"], [train_df[0, 0], -train_df[1, 0]])}
+            }
             data.setup(self.args)
 
             true_train_filter = {
@@ -227,7 +231,9 @@ class TestSklearnLoaders(unittest.TestCase):
             test_filters_equal(true_train_filter, data.train_filters)
 
             # match first column first row, AND the second (so one should match)
-            data.filters = {"filter": (["f1", "f2"], [train_df[0, 0], train_df[0, 1]])}
+            data.filters = {
+                "group": {"filter": (["f1", "f2"], [train_df[0, 0], train_df[0, 1]])}
+            }
             data.setup(self.args)
 
             f = np.full(train_df.shape[0], False, dtype=bool)
@@ -237,8 +243,10 @@ class TestSklearnLoaders(unittest.TestCase):
 
         with self.subTest("Multiple Filters"):
             data.filters = {
-                "filter1": ("f1", train_df[0, 0]),
-                "filter2": ("f2", train_df[0, 1]),
+                "group": {
+                    "filter1": ("f1", train_df[0, 0]),
+                    "filter2": ("f2", train_df[0, 1]),
+                }
             }
             data.setup(self.args)
 
@@ -249,8 +257,10 @@ class TestSklearnLoaders(unittest.TestCase):
             test_filters_equal(true_train_filter, data.train_filters)
 
             data.filters = {
-                "filter1": ("f1", train_df[0, 0]),
-                "filter2": ("f2", train_df[1, 1]),
+                "group": {
+                    "filter1": ("f1", train_df[0, 0]),
+                    "filter2": ("f2", train_df[1, 1]),
+                }
             }
             data.setup(self.args)
 
