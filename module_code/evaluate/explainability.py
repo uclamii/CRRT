@@ -22,10 +22,12 @@ def shap_explainability(
     top_k: Optional[int] = None,
 ):
     explainer = shap.Explainer(
-        model,
+        model.predict,
+        data,
         feature_names=columns.to_list(),
         output_names=["Do not Recommend", "Recommend"],
         categorical_columns=[columns.get_loc(col) for col in categorical_columns],
+        max_evals=2 * len(columns) + 1,  # Error from Permutation explainer
         seed=seed,
     )
     shap_values: shap.Explanation = explainer(data)
