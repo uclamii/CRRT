@@ -12,6 +12,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split, StratifiedGroupKFold
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import SelectKBest
+from sklearn.preprocessing import MinMaxScaler
 
 # Local
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
@@ -245,6 +246,8 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 ),
                 # zero out everything else
                 (f"0-fill-cat", SimpleImputer(strategy="constant", fill_value=0)),
+                # standardize data (need to do it in a way that either preserves pandas or doesn't need it for ctn-fillna.)
+                ("scale", MinMaxScaler()),
                 # feature-selection doesn't allow NaNs in the data, make sure to impute first.
                 ("feature-selection", self.get_feature_selection(reference_cols_mask)),
             ]
