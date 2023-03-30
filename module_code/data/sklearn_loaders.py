@@ -21,6 +21,8 @@ from data.utils import Preselected, SelectThreshold, f_pearsonr
 from data.load import load_data
 
 ADDITIONAL_CATEGORICAL_COLS = [
+    "SEX",
+    "ETHNICITY",
     "surgery_indicator",
     "liver_pt_indicator",
     "heart_pt_indicator",
