@@ -65,7 +65,7 @@ def get_pvalue_and_effect_size(
     error_type: str,
     true_type: str,
     seed: int,
-) -> Tuple[str, float, str, float]:
+) -> Tuple[str, float, str, float, float]:
     # if there is any errors, skips anything less than 3 samples
     if len(dist_error) > 2:
         if is_ctn(dist_error):  # continuous / quantitative
@@ -79,6 +79,7 @@ def get_pvalue_and_effect_size(
                     test_reject(ttest_ind(dist_error, dist_true, random_state=seed)[1]),
                     effect_size_name,
                     effect_size,
+                    ttest_ind(dist_error, dist_true, random_state=seed)[1],
                 )
             # NOT NORMAL
             # Ref: https://www.statology.org/mann-whitney-u-test-python/
@@ -87,6 +88,7 @@ def get_pvalue_and_effect_size(
                 test_reject(mannwhitneyu(dist_error, dist_true)[1]),
                 effect_size_name,
                 effect_size,
+                mannwhitneyu(dist_error, dist_true)[1],
             )
         # categorical / qualitative
         contingency = get_contingency(dist_error, dist_true, error_type, true_type)
@@ -97,6 +99,7 @@ def get_pvalue_and_effect_size(
                 test_reject(fisher_exact(contingency)[1]),
                 "cohens_h",
                 cohens_h(contingency),
+                fisher_exact(contingency)[1],
             )
         # MULTICATEGORICAL
         # although technically frequencies/counts must be > 5 there's no other python alternatives for multicategorical
@@ -105,9 +108,10 @@ def get_pvalue_and_effect_size(
             test_reject(chi2_contingency(contingency)[1]),
             "cramers_v",
             cramers_corrected_stat(contingency),
+            chi2_contingency(contingency)[1],
         )
     # cannot do the test
-    return (None, None, None, None)
+    return (None, None, None, None, None)
 
 
 def model_randomness(
@@ -136,6 +140,7 @@ def model_randomness(
         "Reject H0": {},
         "Measure Name": {},
         "Effect Size": {},
+        "Significance": {},
     }
     for comparison in comparisons:
         error_type, true_type = comparison  # unpack
@@ -151,6 +156,7 @@ def model_randomness(
                 reject_h0,
                 effect_size_name,
                 effect_size,
+                significance,
             ) = get_pvalue_and_effect_size(
                 dist_error, dist_true, error_type, true_type, seed
             )
@@ -158,6 +164,7 @@ def model_randomness(
             table["Reject H0"][(comparison_name, coln)] = reject_h0
             table["Measure Name"][(comparison_name, coln)] = effect_size_name
             table["Effect Size"][(comparison_name, coln)] = effect_size
+            table["Significance"][(comparison_name, coln)] = significance
     # To read: read_csv("tmp.txt", index_col=[0,1])
     log_text(
         DataFrame(table).sort_values("Effect Size", ascending=False).to_csv(),
