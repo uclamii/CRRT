@@ -101,7 +101,7 @@ def static_learning(args: Namespace):
     data = SklearnCRRTDataModule.from_argparse_args(args, filters=generate_filters())
 
     # Pass the original datasets split pt_ids if doing rolling window analysis
-    if args.slide_window_by:
+    if (not args.tune_n_trials and args.slide_window_by == 0) or args.slide_window_by:
         with open(SPLIT_IDS_PATH, "rb") as f:
             reference_ids = pickle.load(f)
             reference_ids = {
