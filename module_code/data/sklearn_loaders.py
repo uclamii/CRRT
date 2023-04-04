@@ -12,6 +12,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split, StratifiedGroupKFold
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import SelectKBest
+from sklearn.preprocessing import MinMaxScaler
 
 # Local
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
@@ -20,6 +21,8 @@ from data.utils import Preselected, SelectThreshold, f_pearsonr
 from data.load import load_data
 
 ADDITIONAL_CATEGORICAL_COLS = [
+    "SEX",
+    "ETHNICITY",
     "surgery_indicator",
     "liver_pt_indicator",
     "heart_pt_indicator",
@@ -124,7 +127,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             for split in split_names:
                 X = X_y_tuples[split][0]
                 filters = {
-                    k: self.get_filter(X, *args) for k, args in self.filters.items()
+                    k: self.get_filter(X, *args)
+                    for groupname, filter in self.filters.items()
+                    for k, args in filter.items()
                 }
                 setattr(self, f"{split}_filters", filters)
 
@@ -243,6 +248,8 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 ),
                 # zero out everything else
                 (f"0-fill-cat", SimpleImputer(strategy="constant", fill_value=0)),
+                # standardize data (need to do it in a way that either preserves pandas or doesn't need it for ctn-fillna.)
+                ("scale", MinMaxScaler()),
                 # feature-selection doesn't allow NaNs in the data, make sure to impute first.
                 ("feature-selection", self.get_feature_selection(reference_cols_mask)),
             ]

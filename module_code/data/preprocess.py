@@ -4,6 +4,7 @@ import pandas as pd
 from data.utils import get_pt_type_indicators
 
 
+# TODO: this probably shouldn't be its own separate module. Maybe move it into sklearn_loaders?
 def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
     """Pre-processes the data for use by ML model (Adhoc)."""
 

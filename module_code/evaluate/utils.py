@@ -20,11 +20,12 @@ filter_fns = {
 }
 
 
-def log_figure(figure: "matplotlib.figure.Figure", path: str):
+def log_figure(figure: "matplotlib.figure.Figure", path: str, ext: str = "svg"):
+    path = f"{path}.{ext}"
     if mlflow.active_run() is None:  # log locally if mlflow not running
         # make if does not exist, otherwise overwrite
         makedirs(dirname(path), exist_ok=True)
-        figure.savefig(path)
+        figure.savefig(path, format=ext, bbox_inches="tight")
     else:
         mlflow.log_figure(figure, path)
 

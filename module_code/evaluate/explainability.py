@@ -22,10 +22,12 @@ def shap_explainability(
     top_k: Optional[int] = None,
 ):
     explainer = shap.Explainer(
-        model,
+        model.predict,
+        data,
         feature_names=columns.to_list(),
         output_names=["Do not Recommend", "Recommend"],
         categorical_columns=[columns.get_loc(col) for col in categorical_columns],
+        max_evals=2 * len(columns) + 1,  # Error from Permutation explainer
         seed=seed,
     )
     shap_values: shap.Explanation = explainer(data)
@@ -35,18 +37,16 @@ def shap_explainability(
         if len(idxs) > 0:
             i = idxs[0]
             plt.clf()
-            shap.plots.waterfall(shap_values[i], show=False)
-            figure = plt.gcf()
-            plt.title(
-                f"{prefix} {sample_type} Decision Explanation (SHAP, iloc: {i})", y=1
+            figure = shap.plots.waterfall(shap_values[i], show=False)
+            figure.suptitle(
+                f"{prefix}{sample_type} Decision Explanation (SHAP, iloc: {i})", y=1
             )
-            plt.tight_layout(pad=3)
             log_figure(
                 figure,
                 join(
                     "img_artifacts",
                     "explanation",
-                    f"{prefix}_{sample_type}_explanation.png",
+                    f"{prefix}_{sample_type}_explanation",
                 ),
             )
 
@@ -54,24 +54,24 @@ def shap_explainability(
         plt.clf()
         shap.plots.beeswarm(shap_values, show=False)
         figure = plt.gcf()
-        plt.title(f"{prefix} SHAP Feature Impact")
+        figure.suptitle(f"{prefix} SHAP Feature Impact")
         # includes impact direction
         log_figure(
             figure,
-            join("img_artifacts", "feature_impact", f"{prefix}_feature_impact.png"),
+            join("img_artifacts", "feature_impact", f"{prefix}_feature_impact"),
         )
 
         plt.clf()
         shap.plots.bar(shap_values, show=False)
         figure = plt.gcf()
-        plt.title(f"{prefix} SHAP Absolute Feature Importance")
+        figure.suptitle(f"{prefix} SHAP Absolute Feature Importance")
         # absolute value magnitude impact
         log_figure(
             figure,
             join(
                 "img_artifacts",
                 "feature_importance",
-                f"{prefix}_feature_importance.png",
+                f"{prefix}_feature_importance",
             ),
         )
 
@@ -102,12 +102,12 @@ def lime_explainability(
             exp = explainer.explain_instance(sample[0], model.predict_proba)
             figure = exp.as_pyplot_figure()
             figure.suptitle(f"{prefix} {sample_type} Decision Explanation (LIME)")
-            figure.set_tight_layout(True)
+            # figure.set_tight_layout(True)
             log_figure(
                 figure,
                 join(
                     "img_artifacts",
                     "explanation",
-                    f"{prefix}_{sample_type}_explanation.png",
+                    f"{prefix}_{sample_type}_explanation",
                 ),
             )

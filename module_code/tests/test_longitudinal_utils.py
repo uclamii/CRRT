@@ -248,7 +248,7 @@ class TestWindowMask(unittest.TestCase):
             for start_date, ndays in zip(self.start_dates, self.ndays_on_crrt)
         ]
         self.outcomes_df = pd.DataFrame(
-            {"End Date": self.end_dates},
+            {"End Date": self.end_dates, "CRRT Total Days": ndays_on_crrt},
             index=[list(range(len(self.start_dates))), self.start_dates],
         )
         self.outcomes_df.index.names = ["IP_PATIENT_ID", "Start Date"]

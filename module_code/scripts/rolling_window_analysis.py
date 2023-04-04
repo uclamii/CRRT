@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     # Refer to get_optuna_grid for pre_start_delta
     max_window_tuning_size = (
-        14 if args.tune_n_trials else get_delta(args.pre_start_delta).days
+        7 if args.tune_n_trials else get_delta(args.pre_start_delta).days
     )
     # set slide_window_by 0 and run
     dargs = vars(args)
@@ -40,19 +40,21 @@ if __name__ == "__main__":
     num_days_to_slide = get_delta(args.pre_start_delta).days
     # don't include the last day becaues potentially people with exactly N days of data will not have that much data / not be many
     # Patients with fewer days won't even appear anymore after sliding so far.
-    for i in range(1, num_days_to_slide):
-        args = deepcopy(orig_args)
-        dargs = vars(args)
-        dargs.update({"slide_window_by": i})
-        if not retrain:  # just evaluate and make sure not to tune
-            dargs.update(
-                {
-                    "stage": "eval",
-                    "tune_n_trials": 0,
-                    "max_days_on_crrt": num_days_to_slide,
-                }
-            )
-        main(args)
+    # slide after and slide before
+    for range in [range(1, num_days_to_slide), range(-3, 0)]:
+        for i in range:
+            args = deepcopy(orig_args)
+            dargs = vars(args)
+            dargs.update({"slide_window_by": i})
+            if not retrain:  # just evaluate and make sure not to tune
+                dargs.update(
+                    {
+                        "stage": "eval",
+                        "tune_n_trials": 0,
+                        "max_days_on_crrt": num_days_to_slide,
+                    }
+                )
+            main(args)
 
 
 # shell script example

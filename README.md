@@ -2,11 +2,9 @@
 
 https://uclahs.app.box.com/folder/151870876097
 
-
 # CRRT Preprocessing
 
-Our analysis as of 1/13/22 do not use: `Encounters.txt`, `Family_History.txt`, and `Hospital_Unit_Transfers.txt`.
-
+# Dev
 **Formatting**: Using flake8, mypy, and black for formatting.
 
 # Includes:

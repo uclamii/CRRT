@@ -103,7 +103,7 @@ def error_visualization(
         )
 
         log_figure(
-            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists.svg")
+            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists")
         )
 
     except RuntimeError:

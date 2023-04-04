@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
-from typing import Any, Callable, Dict, List, Union
-from posixpath import join, dirname  # this is compatible with mlflow, not os.path...
+from typing import Any, Callable, Dict, List, Optional, Union
+from os.path import join, dirname
 from os import makedirs
 import numpy as np
 import pandas as pd
@@ -114,6 +114,15 @@ PLOT_MAP = {
     "lime_explain": lime_explainability,
     "feature_importance": feature_importance,
 }
+
+MODEL_LEVEL_METRICS = [
+    "error_viz",
+    "randomness",
+    "feature_importance",
+] + list(CURVE_MAP.keys())
+
+# Dont' want to do extensive evaluation on the validation or training set
+TEST_ONLY_METRICS = list(CURVE_MAP.keys()) + list(PLOT_MAP.keys())
 
 
 class StaticModel(AbstractModel, HyperparametersMixin):
@@ -231,6 +240,16 @@ class StaticModel(AbstractModel, HyperparametersMixin):
             )
         save_fn(join(serialized_static_model_dir, STATIC_MODEL_FNAME))
 
+    @classmethod
+    def load(cls, serialized_static_model_dir: str) -> "StaticModel":
+        """Different from load model, this creates an instance from the pickle instead of just loading in"""
+        hparams = load_hparams_from_yaml(
+            join(serialized_static_model_dir, STATIC_HPARAM_FNAME)
+        )
+        static_model = cls(**hparams)
+        static_model.load_model(serialized_static_model_dir)
+        return static_model
+
     def load_model(self, serialized_static_model_dir: str) -> None:
         """Loads model regardless if saved locally or in mlflow."""
 
@@ -314,9 +333,12 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     Implements fit and transform.
     """
 
-    def __init__(self, seed: int, **kwargs):
+    def __init__(self, seed: int, static_model: StaticModel = None, **kwargs):
         self.seed = seed
-        self.static_model = StaticModel(seed=seed, **kwargs)
+        if static_model is not None:
+            self.static_model = static_model
+        else:
+            self.static_model = StaticModel(seed=seed, **kwargs)
 
     @classmethod
     def from_argparse_args(
@@ -326,6 +348,26 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
     def log_model(self):
         self.static_model.log_model()
+
+    @classmethod
+    def load(cls, args: Namespace, serialized_model_path: str) -> "CRRTStaticPredictor":
+        """Different from load model, this creates an instance from the pickle instead of just loading in"""
+
+        """
+        Somethign is broken with pyyaml: https://github.com/yaml/pyyaml/issues/266
+        The fix is to change `load_hparams_from_yaml` utility itself.
+        ```
+        with fs.open(config_yaml, "r") as fp:
+            # hparams = yaml.full_load(fp)
+            hparams = yaml.load(fp, Loader=yaml.Loader)
+        ```
+        """
+        # hparams = load_hparams_from_yaml(
+        # join(serialized_model_path, STATIC_HPARAM_FNAME)
+        # )
+        # return cls(hparams["seed"], static_model=static_model)
+        static_model = StaticModel.load(serialized_model_path)
+        return cls.from_argparse_args(args, static_model=static_model)
 
     def load_model(self, serialized_static_model_path: str) -> None:
         self.static_model.load_model(serialized_static_model_path)
@@ -380,6 +422,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
         ## Evaluate on split of dataset (train, val, test) ##
         metrics = self.eval_and_log(
+            stage,
             X,
             y,
             pred_probas,
@@ -399,42 +442,63 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 if filter.sum():  # don't do anything if there's no one represented
                     # If we don't ask for values sklearn will complain it was fitted without feature names
                     self.eval_and_log(
-                        X[filter.values],
-                        y[filter.values],
-                        pred_probas[filter.values],
-                        preds[filter.values],
+                        stage,
+                        X,
+                        y,
+                        pred_probas,
+                        preds,
                         prefix=f"{self.static_model.hparams['modeln']}_{stage}_{filter_n}_",
                         categorical_columns=categorical_columns,
+                        subgroup_filter=filter.values,
                     )
 
         return metrics
 
     def eval_and_log(
         self,
+        stage: str,
         data: pd.DataFrame,
         labels: pd.Series,
         pred_probas: pd.Series,
         preds: pd.Series,
         prefix: str,
         categorical_columns: Union[List[str], Index],
+        subgroup_filter: Optional[pd.Series] = None,
         decision_threshold: float = 0.5,
     ) -> Dict[str, Any]:
         """Logs metrics and curves/plots."""
+        if subgroup_filter is not None:  # apply filter here
+            data = data[subgroup_filter]
+            labels = labels[subgroup_filter]
+            preds = preds[subgroup_filter]
+            pred_probas = pred_probas[subgroup_filter]
+
+        def eval_conditions(name: str) -> bool:
+            # if it's not a subgroup we don't care, evaluate
+            # if it's a subgroup then we skip model-level metrics (like feature importance)
+            subgroup_eval_conditions = (subgroup_filter is None) or (
+                name not in MODEL_LEVEL_METRICS
+            )
+
+            # if the metric is test only then the stage should be test
+            stage_eval_conditions = (name not in TEST_ONLY_METRICS) or (stage == "test")
+            return subgroup_eval_conditions and stage_eval_conditions
+
         metrics = None
 
         # log predict probabilities
-        predict_probas_file = join("predict_probas", f"{prefix}_predict_probas.pkl")
-        makedirs(dirname(predict_probas_file), exist_ok=True)  # ensure dir exists
-        pred_probas.to_pickle(predict_probas_file)
-        if mlflow.active_run():
-            mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
+        # predict_probas_file = join("predict_probas", f"{prefix}_predict_probas.pkl")
+        # makedirs(dirname(predict_probas_file), exist_ok=True)  # ensure dir exists
+        # pred_probas.to_pickle(predict_probas_file)
+        # if mlflow.active_run():
+        #     mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
 
         # log labels for convenient post-hoc analysis if required
-        if "test" in prefix:
-            labels_file = join("predict_probas", f"{prefix}_labels.pkl")
-            labels.to_pickle(labels_file)
-            if mlflow.active_run():
-                mlflow.log_artifact(labels_file, dirname(predict_probas_file))
+        # if "test" in prefix:
+        #     labels_file = join("predict_probas", f"{prefix}_labels.pkl")
+        #     labels.to_pickle(labels_file)
+        #     if mlflow.active_run():
+        #         mlflow.log_artifact(labels_file, dirname(predict_probas_file))
 
         pred_probas = pred_probas.values
 
@@ -448,11 +512,14 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.hparams["metric_names"],
                 self.static_model.metrics,
             ):
-                name = f"{prefix}_{metric_name}"
-                if labels_are_homog and metric_name not in metrics_ok_homog:
-                    metrics[name] = np.nan
-                else:
-                    metrics[name] = metric_fn(labels, pred_probas, decision_threshold)
+                if eval_conditions(metric_name):
+                    name = f"{prefix}_{metric_name}"
+                    if labels_are_homog and metric_name not in metrics_ok_homog:
+                        metrics[name] = np.nan
+                    else:
+                        metrics[name] = metric_fn(
+                            labels, pred_probas, decision_threshold
+                        )
 
                     if "test" in prefix:
                         bootstrapped = bootstrap_metric(
@@ -485,6 +552,8 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
 
             if mlflow.active_run():
                 mlflow.log_metrics(metrics)
+            else:
+                print(metrics)
 
         # Curves/Plots
         if self.static_model.hparams["curve_names"] is not None:
@@ -492,15 +561,14 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                 self.static_model.hparams["curve_names"],
                 self.static_model.curves,
             ):
-                # prevent a lot of figures from popping up on screen
-                figure = curve.from_predictions(labels, pred_probas)
-                name = f"{prefix}_{curve_name}"
-                figure.figure_.suptitle(name)
-                log_figure(
-                    figure.figure_,
-                    join("img_artifacts", "curves", f"{name}.svg"),
-                )
-                plt.close()
+                if eval_conditions(curve_name):
+                    # prevent a lot of figures from popping up on screen
+                    figure = curve.from_predictions(labels, pred_probas)
+                    name = f"{prefix}_{curve_name}"
+                    figure.figure_.suptitle(name)
+                    # log_figure(figure, join("img_artifacts", "curves", name))
+                    log_figure(figure.figure_, join("img_artifacts", "curves", name))
+                    plt.close()
 
         # Other plots
         if self.static_model.plots is not None:
@@ -517,14 +585,19 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
             }
 
             for analysis_fn in self.static_model.plots:
-                if (
-                    not self.static_model.use_shap_for_feature_importance
-                    and analysis_fn == shap_explainability
-                ):
-                    new_args = args.copy()
-                    new_args["top_k"] = None
-                    analysis_fn(**new_args)
-                else:
-                    analysis_fn(**args)
+                # reverse lookup the name from the function
+                name = next(key for key, fn in PLOT_MAP.items() if fn == analysis_fn)
+                if eval_conditions(name):
+                    # don't use shap for feature importance if:
+                    # we say not to or if we're in a subgroup
+                    if (
+                        not self.static_model.use_shap_for_feature_importance
+                        or subgroup_filter is not None
+                    ) and analysis_fn == shap_explainability:
+                        new_args = args.copy()
+                        new_args["top_k"] = None
+                        analysis_fn(**new_args)
+                    else:
+                        analysis_fn(**args)
 
         return metrics

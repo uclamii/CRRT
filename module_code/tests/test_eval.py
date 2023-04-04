@@ -1,7 +1,7 @@
 from argparse import Namespace
 from typing import List
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import unittest.mock as mock
 from numpy.random import default_rng
 import numpy as np
@@ -73,6 +73,9 @@ class TestEvalModel(unittest.TestCase):
             self.feature_names, list(range(1, self.nsamples, 2))
         )  # indices odd
 
+    def do_nothing_side_effect(self, *args, **kwargs):
+        return
+
     @patch("module_code.data.sklearn_loaders.load_data")
     def test_explain(self, mock_load_data_fn):
         mock_load_data_fn.side_effect = self.load_data_side_effect
@@ -130,3 +133,57 @@ class TestEvalModel(unittest.TestCase):
 
             self.data.train_filters = None
             model.evaluate(self.data, "train")
+
+    @patch("module_code.models.static_models.PLOT_MAP")
+    @patch("module_code.data.sklearn_loaders.load_data")
+    def test_eval_conditions(self, mock_load_data_fn, mock_plot_map):
+        mock_load_data_fn.side_effect = self.load_data_side_effect
+        true_plot_map = {
+            "randomness": MagicMock(name="model_randomness"),
+            "shap_explain": MagicMock(name="shap_explain"),
+            "roc_curve": MagicMock(name="roc_curve"),
+        }
+        mock_plot_map.__getitem__.side_effect = true_plot_map.__getitem__
+        mock_plot_map.items.side_effect = true_plot_map.items
+
+        with self.subTest("SHAP"):
+            args = Namespace(
+                seed=SEED,
+                modeln="xgb",
+                metric_names=[],
+                curve_names=[],
+                plot_names=["randomness", "shap_explain", "roc_curve"],
+                top_k_feature_importance=5,
+                model_kwargs={},
+                **self.data_args,
+            )
+            data = SklearnCRRTDataModule(
+                SEED,
+                outcome_col_name=self.outcome_col_name,
+                train_val_cohort="ucla_crrt",
+                eval_cohort="ucla_crrt",
+                val_split_size=self.val_split_size,
+                test_split_size=self.test_split_size,
+                filters={"group": {"f": (self.feature_names[0], (50, 100))}},
+            )
+            data.setup(args)
+
+            model = CRRTStaticPredictor.from_argparse_args(args)
+            model.fit(data)
+
+            # should not be called in train and val
+            model.evaluate(data, "train")
+            self.assertEqual(0, true_plot_map["randomness"].call_count)
+            self.assertEqual(0, true_plot_map["shap_explain"].call_count)
+            self.assertEqual(0, true_plot_map["roc_curve"].call_count)
+            model.evaluate(data, "val")
+            self.assertEqual(0, true_plot_map["randomness"].call_count)
+            self.assertEqual(0, true_plot_map["shap_explain"].call_count)
+            self.assertEqual(0, true_plot_map["roc_curve"].call_count)
+
+            model.evaluate(data, "test")
+            # this is model level should only be called once
+            self.assertEqual(1, true_plot_map["randomness"].call_count)
+            self.assertEqual(1, true_plot_map["roc_curve"].call_count)
+            # this is not model level, 1 for model, 1 for the 1 subgroup filter
+            self.assertEqual(2, true_plot_map["shap_explain"].call_count)
