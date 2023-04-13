@@ -45,7 +45,13 @@ from evaluate.error_viz import error_visualization
 from evaluate.error_analysis import model_randomness
 from evaluate.explainability import shap_explainability, lime_explainability
 from evaluate.feature_importance import feature_importance
-from evaluate.utils import log_figure, bootstrap_metric, confidence_interval
+from evaluate.utils import (
+    dump_array,
+    eval_metric,
+    log_figure,
+    bootstrap_metric,
+    confidence_interval,
+)
 
 STATIC_MODEL_FNAME = "static_model.pkl"
 STATIC_HPARAM_FNAME = "static_hparams.yml"
@@ -191,6 +197,7 @@ class StaticModel(AbstractModel, HyperparametersMixin):
     def configure_plots(self, plot_names: List[str]) -> List[Callable]:
         if plot_names is None:
             return None
+        # TODO: should this be baked in here?
         self.use_shap_for_feature_importance = True
         plots = []
         for plot in plot_names:
@@ -369,6 +376,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         static_model = StaticModel.load(serialized_model_path)
         return cls.from_argparse_args(args, static_model=static_model)
 
+    # Load when using mlflow, save when running with no tracking
     def load_model(self, serialized_static_model_path: str) -> None:
         self.static_model.load_model(serialized_static_model_path)
 
@@ -487,23 +495,12 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         metrics = None
 
         # log predict probabilities
-        # predict_probas_file = join("predict_probas", f"{prefix}_predict_probas.pkl")
-        # makedirs(dirname(predict_probas_file), exist_ok=True)  # ensure dir exists
-        # pred_probas.to_pickle(predict_probas_file)
-        # if mlflow.active_run():
-        #     mlflow.log_artifact(predict_probas_file, dirname(predict_probas_file))
-
-        # log labels for convenient post-hoc analysis if required
-        # if "test" in prefix:
-        #     labels_file = join("predict_probas", f"{prefix}_labels.pkl")
-        #     labels.to_pickle(labels_file)
-        #     if mlflow.active_run():
-        #         mlflow.log_artifact(labels_file, dirname(predict_probas_file))
+        # dump_array(prefix, "predict_probas", pred_probas)
+        # # log labels for convenient post-hoc analysis if required
+        # if stage == "test":
+        #     dump_array(prefix, "labels", labels)
 
         pred_probas = pred_probas.values
-
-        labels_are_homog = len(labels.value_counts()) == 1
-        metrics_ok_homog = {"accuracy"}
 
         # Metrics
         if self.static_model.hparams["metric_names"] is not None:
@@ -514,41 +511,33 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
             ):
                 if eval_conditions(metric_name):
                     name = f"{prefix}_{metric_name}"
-                    if labels_are_homog and metric_name not in metrics_ok_homog:
-                        metrics[name] = np.nan
-                    else:
-                        metrics[name] = metric_fn(
-                            labels, pred_probas, decision_threshold
-                        )
 
-                    if "test" in prefix:
-                        bootstrapped = bootstrap_metric(
+                    if stage == "test":
+                        bootstrapped_metrics = bootstrap_metric(
                             labels,
                             pred_probas,
                             metric_name,
                             metric_fn,
                             decision_threshold=decision_threshold,
-                            random_state=self.static_model.hparams["model_kwargs"][
+                            seed=self.static_model.hparams["model_kwargs"][
                                 "random_state"
                             ],
                         )
+                        # report the mean as the point estimate
+                        metrics[name] = bootstrapped_metrics.mean()
+                        low, high = confidence_interval(bootstrapped_metrics)
+                        metrics[f"{name}_CI_low"] = low
+                        metrics[f"{name}_CI_high"] = high
 
-                        CI = confidence_interval(bootstrapped)
-                        metrics[name + "_CI_low"] = CI[0]
-                        metrics[name + "_CI_high"] = CI[1]
-
-                        bootstrapped = pd.Series(bootstrapped)
-                        bootstrapped_file = join(
-                            "bootstrapped", f"{name}_bootstrapped.pkl"
+                        dump_array(name, "bootstrapped", bootstrapped_metrics)
+                    else:  # just eval no bootstrapping
+                        metrics[name] = eval_metric(
+                            labels,
+                            pred_probas,
+                            metric_name,
+                            metric_fn,
+                            decision_threshold,
                         )
-                        makedirs(
-                            dirname(bootstrapped_file), exist_ok=True
-                        )  # ensure dir exists
-                        bootstrapped.to_pickle(bootstrapped_file)
-                        if mlflow.active_run():
-                            mlflow.log_artifact(
-                                bootstrapped_file, dirname(bootstrapped_file)
-                            )
 
             if mlflow.active_run():
                 mlflow.log_metrics(metrics)
