@@ -62,10 +62,11 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.filters = filters
         self.impute_method = impute_method
         if self.impute_method == "simple":
-            self.imputer = SimpleImputer(strategy="mean")
+            # the empty features will be dropped in feature selection.
+            self.imputer = SimpleImputer(strategy="mean", keep_empty_features=True)
         # TODO: allow different neighbors to be passed in to be tuned
         elif self.impute_method == "knn":
-            self.imputer = KNNImputer()
+            self.imputer = KNNImputer(keep_empty_features=True)
 
     def setup(
         self,
