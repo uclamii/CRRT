@@ -1,10 +1,13 @@
-from typing import TYPE_CHECKING, Callable, List, Tuple, Dict, Any
-from os.path import dirname
+from typing import TYPE_CHECKING, Callable, List, Tuple, Dict, Any, Union
+from os.path import dirname, join
 from os import makedirs
 import mlflow
 from scipy.stats import bootstrap
 from sklearn.utils import resample
+import pandas as pd
 import numpy as np
+from numpy import percentile
+from numpy.random import default_rng
 import matplotlib.pyplot as plt
 
 if TYPE_CHECKING:
@@ -39,63 +42,90 @@ def log_text(text: str, path: str):
         mlflow.log_text(text, path)
 
 
-def bootstrap_metric(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
+def dump_array(prefix: str, name: str, array: Union[pd.Series, np.ndarray]):
+    if isinstance(array, pd.Series):
+        array_file = join(name, f"{prefix}_{name}.pkl")
+        makedirs(dirname(array_file), exist_ok=True)  # ensure dir exists
+        array.to_pickle(array_file)
+    else:  # np array
+        array_file = join(name, f"{prefix}_{name}.npy")
+        makedirs(dirname(array_file), exist_ok=True)  # ensure dir exists
+        np.save(array_file, array)
+    if mlflow.active_run():
+        mlflow.log_artifact(array_file, dirname(array_file))
+
+
+def eval_metric(
+    labels: pd.Series,
+    pred_probas: pd.Series,
     metric_name: str,
     metric_fn: Callable,
-    n_resamples: int = 1000,
-    random_state: int = 42,
+    decision_threshold: float = 0.5,
+) -> float:
+    labels_are_homog = len(labels.value_counts()) == 1
+    metrics_ok_homog = {"accuracy"}
+    if labels_are_homog and metric_name not in metrics_ok_homog:
+        return np.nan
+    return metric_fn(labels, pred_probas, decision_threshold)
+
+
+def bootstrap_metric(
+    labels: np.ndarray,
+    pred_probas: np.ndarray,
+    metric_name: str,
+    metric_fn: Callable,
+    n_bootstrap_samples: int = 1000,
+    seed: int = 42,
     decision_threshold: float = 0.5,
     mode: str = "resample",
 ) -> np.ndarray:
 
     # use default scipy bootstraping. outputs distribution of the statistic
     if mode == "scipy":
-        bootstrapped_scores = bootstrap(
-            (y_true, y_pred, [decision_threshold] * len(y_true)),
+        bootstrapped_metrics = bootstrap(
+            (labels, pred_probas, [decision_threshold] * len(labels)),
             metric_fn,
             vectorized=False,
             paired=True,
-            random_state=random_state,
-            n_resamples=1000,
-            batch=len(y_true),
+            random_state=seed,
+            n_resamples=n_bootstrap_samples,
+            batch=len(labels),
         ).bootstrap_distribution
+    elif mode == "resample":  # manually resample the dataset
+        bootstrapped_metrics = []
 
-    # manually resample the dataset
-    elif mode == "resample":
-        bootstrapped_scores = []
-
-        random_instance = np.random.RandomState(seed=random_state)
-        for i in range(n_resamples):
-
+        gen = default_rng(seed)
+        bootstrap_seeds = gen.integers(0, 10000, n_bootstrap_samples)
+        for i in range(n_bootstrap_samples):
             # bootstrap by sampling with replacement
-            X, y = resample(y_pred, y_true, random_state=random_instance, replace=True)
+            pred_probas_boot, labels_boot = resample(
+                pred_probas, labels, random_state=bootstrap_seeds[i], replace=True
+            )
 
-            labels_are_homog = len(y.value_counts()) == 1
-            metrics_ok_homog = {"accuracy"}
-            if labels_are_homog and metric_name not in metrics_ok_homog:
-                score = np.nan
-            else:
-                score = metric_fn(y, X, decision_threshold)
+            metric = eval_metric(
+                labels_boot,
+                pred_probas_boot,
+                metric_name,
+                metric_fn,
+                decision_threshold,
+            )
+            bootstrapped_metrics.append(metric)
 
-            bootstrapped_scores.append(score)
+    bootstrapped_metrics = np.array(bootstrapped_metrics)
 
-    bootstrapped_scores = np.array(bootstrapped_scores)
-
-    return bootstrapped_scores
+    return bootstrapped_metrics
 
 
-def confidence_interval(sorted_scores: np.ndarray) -> Tuple[float]:
-
-    # first sort
-    sorted_scores.sort()
-
-    # get confidence intervals
-    confidence_lower = sorted_scores[int(0.025 * len(sorted_scores))]
-    confidence_upper = sorted_scores[int(0.975 * len(sorted_scores))]
-
-    return confidence_lower, confidence_upper
+def confidence_interval(
+    metrics: np.ndarray, confidence_level: float = 0.95
+) -> Tuple[float, float]:
+    """Returns confidence interval at given confidence level for statistical
+    distributions established with bootstrap sampling.
+    """
+    alpha = 1 - confidence_level
+    lower = alpha / 2 * 100
+    upper = (alpha / 2 + confidence_level) * 100
+    return (percentile(metrics, lower), percentile(metrics, upper))
 
 
 # The below is not currently used because it significantly slows down the runtime

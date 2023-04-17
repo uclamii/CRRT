@@ -54,9 +54,10 @@ def run_experiment(args: Namespace, trials=None):
             results_dict = experiment_function(*experiment_args)
     else:
         results_dict = experiment_function(*experiment_args)
-    if args.tune_n_trials:  # So Optuna can compare and pick best trial
-        eval_split = "test" if args.stage == "eval" else "val"
-        return results_dict[f"{args.modeln}_{eval_split}__{args.tune_metric}"]
+    if (
+        args.tune_n_trials and args.stage != "eval"
+    ):  # So Optuna can compare and pick best trial based on validation
+        return results_dict[f"{args.modeln}_val__{args.tune_metric}"]
     return results_dict
 
 

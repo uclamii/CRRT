@@ -62,10 +62,11 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.filters = filters
         self.impute_method = impute_method
         if self.impute_method == "simple":
-            self.imputer = SimpleImputer(strategy="mean")
+            # the empty features will be dropped in feature selection.
+            self.imputer = SimpleImputer(strategy="mean", keep_empty_features=True)
         # TODO: allow different neighbors to be passed in to be tuned
         elif self.impute_method == "knn":
-            self.imputer = KNNImputer()
+            self.imputer = KNNImputer(keep_empty_features=True)
 
     def setup(
         self,
@@ -255,9 +256,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             ]
         )
 
-        data, labels = train
-        pipeline.fit(data, labels)
-
+        pipeline.fit(*train)
         return pipeline.transform
 
     def get_feature_selection(
@@ -315,29 +314,17 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         """
         separate_eval_dataset = X_eval is not None and y_eval is not None
         # sample = [pt, treatment]
-        # TODO: ensure patient is in same split
         # ensure data is split by patient
+        def pick_unique_pt_ids(data: pd.DataFrame) -> np.ndarray:
+            # If aggregating over a time-interval, a new column "DATE" is introduced
+            to_drop = ["Start Date"]
+            if "DATE" in data.index.names:
+                to_drop.append("DATE")
+            return data.index.droplevel(to_drop).unique().values
 
-        # If aggregating over a time-interval, a new column "DATE" is introduced
-        if "DATE" in X.index.names:
-            sample_ids = {
-                "train_val": X.index.droplevel(["Start Date", "DATE"]).unique().values
-            }
-        else:
-            sample_ids = {
-                "train_val": X.index.droplevel(["Start Date"]).unique().values
-            }
-
-        train_val_labels = y.groupby("IP_PATIENT_ID").first()
+        sample_ids = {"train_val": pick_unique_pt_ids(X)}
         if separate_eval_dataset:
-            if "DATE" in X_eval.index.names:
-                sample_ids["eval"] = (
-                    X_eval.index.droplevel(["Start Date", "DATE"]).unique().values
-                )
-            else:
-                sample_ids["eval"] = (
-                    X_eval.index.droplevel(["Start Date"]).unique().values
-                )
+            sample_ids["eval"] = pick_unique_pt_ids(X_eval)
 
         if reference_ids is not None:  # filter id to the serialized ones
             # There are patients we don't want include:
@@ -353,6 +340,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             test_ids = reference_ids["test"].join(sample_ids[test_ids_key], how="inner")
         else:
             # patient_ids = X.index.unique("IP_PATIENT_ID").values
+            train_val_labels = y.groupby("IP_PATIENT_ID").first()
             if not separate_eval_dataset:  # need to split twice
                 train_val_ids, test_ids = train_test_split(
                     sample_ids["train_val"],

@@ -182,14 +182,12 @@ def calculate_bmi(vitals_df: DataFrame) -> DataFrame:
 
     # Iterate through all unique patients that have a height measurement
     for patient in heights["IP_PATIENT_ID"].unique():
-
         # Get the height and weight measurements for that patient
         patient_heights = heights[heights["IP_PATIENT_ID"] == patient].copy()
         patient_weights = weights[weights["IP_PATIENT_ID"] == patient].copy()
 
         # Iterate through all weights for that unique patient
         for j, weight in patient_weights.iterrows():
-
             # Get the height measurement from the closest day to the weight measurement
             patient_heights["TIME_DIFF"] = (
                 patient_heights["VITAL_SIGN_TAKEN_TIME"]
@@ -271,7 +269,6 @@ def map_medications(
     raw_data_dir: str,
     medication_mapping_file: str = "Medications_Mapping.pkl",
 ) -> DataFrame:
-
     if not isfile(join(raw_data_dir, medication_mapping_file)):
         return rx_df
 
@@ -318,7 +315,6 @@ def load_labs(
 def map_encounter_to_patient(
     raw_data_dir: str, df: DataFrame, encounter_file: str = FILE_NAMES["enc"]
 ):
-
     # skip if all patient ids exist
     if not df["IP_PATIENT_ID"].isnull().values.any():
         return df
@@ -348,7 +344,6 @@ def map_labs(
     raw_data_dir: str,
     proc_mapping_file: str = "Labs_Mapping.pkl",
 ) -> DataFrame:
-
     # Should only do for Cedars
     if not isfile(join(raw_data_dir, proc_mapping_file)):
         return static_df
@@ -483,7 +478,6 @@ def map_proc_code_to_cpt(
     raw_data_dir: str,
     proc_mapping_file: str = "Procedures_Code_Mapping.pkl",
 ) -> DataFrame:
-
     # Should only do for Cedars
     if not isfile(join(raw_data_dir, proc_mapping_file)):
         return static_df
