@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable, Dict, List, Optional, Union
-from os.path import join, dirname
+from posixpath import join, dirname
 from os import makedirs
 import numpy as np
 import pandas as pd

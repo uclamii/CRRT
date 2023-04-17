@@ -73,7 +73,7 @@ def get_best_trial_mlflow_run(
 ) -> Run:
     """Get the mlflow run id of the best optuna trial for evaluation."""
     best_args = best_trial.params
-    client = MlflowClient(join(args.local_log_path, "mlruns"))
+    client = MlflowClient(f"file://{join(args.local_log_path, 'mlruns')}")
     # Get the trial based on the number (0 indexed)
     # Get most recent hyperparameter trial for the given run name
     best_run = client.search_runs(

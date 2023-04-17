@@ -37,16 +37,20 @@ def load_data(args: Namespace) -> SklearnCRRTDataModule:
     data = SklearnCRRTDataModule.from_argparse_args(args, filters=generate_filters())
 
     # Pass the original datasets split pt_ids if doing rolling window analysis
-    if (not args.tune_n_trials and args.slide_window_by == 0) or args.slide_window_by:
-        with open(SPLIT_IDS_PATH, "rb") as f:
-            reference_ids = pickle.load(f)
-            reference_ids = {
-                split: pd.Index(split_ids) for split, split_ids in reference_ids.items()
-            }  # enforce Index
-        with open(COLUMNS_PATH, "rb") as f:
-            original_columns = pickle.load(f)
-        with open(DATA_TRANSFORM_PATH, "rb") as f:
-            data_transform = cloudpickle.load(f)
+    if args.stage == "eval":
+        if (
+            not args.tune_n_trials and args.slide_window_by == 0
+        ) or args.slide_window_by:
+            with open(SPLIT_IDS_PATH, "rb") as f:
+                reference_ids = pickle.load(f)
+                reference_ids = {
+                    split: pd.Index(split_ids)
+                    for split, split_ids in reference_ids.items()
+                }  # enforce Index
+            with open(COLUMNS_PATH, "rb") as f:
+                original_columns = pickle.load(f)
+            with open(DATA_TRANSFORM_PATH, "rb") as f:
+                data_transform = cloudpickle.load(f)
     else:
         reference_ids = None
         original_columns = None
@@ -73,7 +77,7 @@ def static_learning(args: Namespace):
         if (
             not args.tune_n_trials and args.slide_window_by == 0
         ) or args.slide_window_by:  # Override with already trained model
-            model = model.load_model(MODEL_DIR)
+            model.load_model(MODEL_DIR)
         else:  # executed at the end of tuning/one-off and if slide_window_by is not 0/None
             model.load_model(args.best_model_path)
             # if tuning the best model will never be dumped, so we dump it on the evaluation of the best model on original reference window
