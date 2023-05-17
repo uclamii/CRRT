@@ -80,10 +80,10 @@ class TestAggregateFeature(unittest.TestCase):
                     3,
                 ]  # SBP
                 + [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],  # DBP
-                2: [0.2, 0.2, 0.2, 0, 0, 1]  # SBP
+                2: [0.2, 0.2, 0.2, 0, np.nan, 1]  # SBP
                 + [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],  # DBP
-                3: [0.1, 0.1, 0.1, 0, 0, 1] + [0.3, 0.3, 0.3, 0, 0, 1],
-                4: [0.4, 0.4, 0.4, 0, 0, 1]  # SBP
+                3: [0.1, 0.1, 0.1, 0, np.nan, 1] + [0.3, 0.3, 0.3, 0, 0, 1],
+                4: [0.4, 0.4, 0.4, 0, np.nan, 1]  # SBP
                 + [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],  # DBP
             },
             orient="index",
@@ -102,9 +102,10 @@ class TestAggregateFeature(unittest.TestCase):
             dtype=np.float,  # dtype has to match or else this will falsely fail
         )
         correct_df.index.name = "IP_PATIENT_ID"
-        # drop DBP_std since it won't exist for the test data we've written
-        # There's no patient that has 2 DBP readings (so std is np.nan for all)
-        # correct_df.drop("DBP_std", axis=1, inplace=True)
+        # drop DBP_skew since it won't exist for the test data we've written
+        # There's no patient that has 2 DBP readings (so skew is np.nan for all)
+        # also note: while np.std(<list with len == 1>) is 0, skew(<list with len == 1>) is np.nan
+        correct_df.drop("DBP_skew", axis=1, inplace=True)
         mock_masked_df.return_value = self.ctn_df
 
         df = aggregate_ctn_feature(
@@ -156,12 +157,12 @@ class TestAggregateFeature(unittest.TestCase):
                     skew([0.1, 0.3]),
                     2,
                 ],
-                (1, np.datetime64("2020-04-06")): [0.2, 0.2, 0.2, 0, 0, 1],
-                (2, np.datetime64("2019-03-05")): [0.2, 0.2, 0.2, 0, 0, 1]  # SBP
+                (1, np.datetime64("2020-04-06")): [0.2, 0.2, 0.2, 0, np.nan, 1],
+                (2, np.datetime64("2019-03-05")): [0.2, 0.2, 0.2, 0, np.nan, 1]  # SBP
                 + [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],  # DBP
-                (3, np.datetime64("2020-04-06")): [0.1, 0.1, 0.1, 0, 0, 1]  # SBP
+                (3, np.datetime64("2020-04-06")): [0.1, 0.1, 0.1, 0, np.nan, 1]  # SBP
                 + [0.3, 0.3, 0.3, 0, 0, 1],  # DBP
-                (4, np.datetime64("2019-03-05")): [0.4, 0.4, 0.4, 0, 0, 1]  # SBP
+                (4, np.datetime64("2019-03-05")): [0.4, 0.4, 0.4, 0, np.nan, 1]  # SBP
                 + [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],  # DBP
             },
             orient="index",
@@ -179,6 +180,9 @@ class TestAggregateFeature(unittest.TestCase):
             ],
             dtype=np.float,  # dtype has to match or else this will falsely fail
         )
+        # drop DBP_skew since it won't exist for the test data we've written
+        # There's no patient that has 2 DBP readings (so skew is np.nan for all)
+        correct_df.drop("DBP_skew", axis=1, inplace=True)
 
         correct_df.index = pd.MultiIndex.from_tuples(
             correct_df.index, names=["IP_PATIENT_ID", UNIVERSAL_TIME_COL_NAME]
@@ -194,7 +198,8 @@ class TestAggregateFeature(unittest.TestCase):
             time_col=self.time_col,
             time_interval=time_interval,
         )
-        self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
+        pd.testing.assert_frame_equal(correct_df, df.droplevel("Start Date"))
+        # self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
     @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
     def test_time_interval_cat(self, mock_masked_df):
