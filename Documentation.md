@@ -1,11 +1,18 @@
 # Project Documentation
 
 Everything can be triggered from `main.py` and can be adjusted in `options.yml`. 
+Any flags you don't understand, search the project directory for `--<flag_name>` for its definition in ArgParse which will give an explanation.
 If you want to do a rolling window analysis, execute `python scripts/rolling_window_analysis.py`.
 Hyperparameter tuning is via optuna, the grid desired can be found in `module_code/exp/utils.py`.
 Experiment tracking is via mlflow, optuna trials are numbered starting from 0.
 
-NOTE: Everytime the preprocesing changes, you need to delete the saved preprocessed file so the whole pipeline can start again.
+NOTE: Everytime the preprocessing changes, you need to delete the saved preprocessed file so the whole pipeline can start again.
+The `main.py` logic will generate and serialized a preprocessed file if it can't find one.
+You can also run `python scripts/process_and_serialize_raw_data.py` to manually override any serialized files (without having to delete).
+Instructions for how to use that are within that script (i.e. running preproc+serialization for each slided window for `rolling_window_analysis.py`).
+In `options.yml` you should delineate  a directory per cohort, i.e., `ucla-crrt-data-dir`, `ucla-control-data-dir`, and `cedars-crrt-data-dir` to directories on your local machine.
+When you preprocess and serialize these cohorts, the preprocssed files will go into these directories respectively.
+When loading data the script will know where to look.
 
 ## File Organization
 ```

@@ -16,7 +16,12 @@ from data.load import (
 def main():
     load_cli_args()
     p = ArgumentParser()
-    p.add_argument("--cohort", type=str, help="Name of cohort to run preprocessing on.")
+    p.add_argument(
+        "--cohort",
+        type=str,
+        choices=["ucla_crrt", "cedars_crrt", "ucla_control"],
+        help="Name of cohort to run preprocessing on.",
+    )
     args = init_cli_args(p)
 
     process_and_serialize_raw_data(
