@@ -261,8 +261,9 @@ def convert_numerical_count_unit_values(
     to_convert_other = next(iter(count_unit_convert_other), "")
     unit = unit.replace(to_convert_other, "u") if to_convert_other else unit
     mode = mode.replace(to_convert_mode, "u") if to_convert_mode else mode
+    # TODO:PP check division
     result *= NUMERICAL_COUNT_UNIT_VALUES.get(
-        to_convert_other, 1
-    ) / NUMERICAL_COUNT_UNIT_VALUES.get(to_convert_mode, 1)
+        to_convert_mode, 1
+    ) / NUMERICAL_COUNT_UNIT_VALUES.get(to_convert_other, 1)
 
     return (result, unit, mode)
