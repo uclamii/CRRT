@@ -83,6 +83,31 @@ G_TO_MOL = {  # inverse of molecular weight, so mol/g
 }
 
 
+def specific_lab_preproc(df, lab_name):
+    """Method to modify a specific lab"""
+    # check if lab exists
+    if lab_name in df["COMPONENT_NAME"].unique():
+        ABG_lab_s = (
+            df[df["COMPONENT_NAME"] == lab_name]["RESULTS"]
+            .str.extract(r"(\d+(\.\d+)?)%")[0]  # regex to extract percentages
+            .astype(float)
+        )
+        ABG_lab_s[ABG_lab_s > 100] = nan
+        df.loc[df["COMPONENT_NAME"] == "ABG INSPIRED O2", "RESULTS"] = ABG_lab_s
+        return df
+    else:
+        raise Exception("Lab does not exist.")
+
+
+def force_to_upper_lower_bound(s):
+    """Method to push number to bounds from a string
+    # setting > or < to float
+    # using regex replace strings with > or < sign that contain a number, keep existing
+    # numeric values as well
+    """
+    return s.str.replace(r"[<>]\s*(\d+)", r"\1")  # regex
+
+
 def force_lab_numeric(results: Series) -> Series:
     # upper/lower bound by stripping >/<[=] and words
     bounded = results.str.replace("<|>|=|[\D]", "")
@@ -130,6 +155,7 @@ def map_labs(
         loaded_dict = load(f)
 
     static_df["COMPONENT_NAME"] = static_df["COMPONENT_NAME"].replace(loaded_dict)
+    # TODO: flag to filter by mapping on UCLA-CEDARS or UCLA-CEDARS-COntrol_UCLA or no filtering
 
     return static_df
 

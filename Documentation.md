@@ -20,6 +20,9 @@ To align lab units:
 run module_code/scripts/construct_lab_unit_mappings.py
 ```
 
+To preprocess the windows:
+Reference: module_code/scripts/process_and_serialize_raw_data.py
+
 ## Experiment runs
 
 Everything can be triggered from `main.py` and can be adjusted in `options.yml`. 
