@@ -42,7 +42,7 @@ if __name__ == "__main__":
         `python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_control`
     For the rolling window:
     ```
-    for i in {0..7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_crrt --slide-window-by $i; done
+    for i in {1..7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_crrt --slide-window-by $i; done
     ```
     """
     # sys.argv += ["--cohort", "cedars_crrt"]
