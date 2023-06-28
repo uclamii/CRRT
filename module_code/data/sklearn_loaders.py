@@ -93,8 +93,10 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             )
             # combine columns (outer join)
             all_columns = X.columns.union(X_eval.columns)
-            # make sure columns in are availabl exist here (but they're all missing)
+            # make sure columns from both are all available (but they're all missing)
             # the missing values will be simple imputed (ctn) and 0 imputed (nan)
+            # NOTE: if keep_empty_features for our imputers in the post split transform
+            #   pipeline is False, then the fully empty continuous features will be dropped.
             # by the serialized transform function
             # ref: https://stackoverflow.com/a/30943503/1888794
             X = X.reindex(columns=all_columns)
@@ -313,6 +315,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         Reference IDs will be from there as well.
         """
         separate_eval_dataset = X_eval is not None and y_eval is not None
+
         # sample = [pt, treatment]
         # ensure data is split by patient
         def pick_unique_pt_ids(data: pd.DataFrame) -> np.ndarray:

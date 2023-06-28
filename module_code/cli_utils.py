@@ -161,7 +161,7 @@ def add_global_args(
         "--tune-n-trials",
         type=int,
         default=None,
-        help="Set to integer value to turn on Optuna tuning. Find the settings for tuning in module/exp/utils.py.",
+        help="Set to integer value to turn on Optuna tuning. Find the settings for tuning in module/exp/utils.py. It will set the number of hyperparameters to try PER predictive model. So if we're evaluating 5 predictive models, tune-n-trials==1 will run 5 experiments. if ==2, it will run 10, etc.",
     )
     logging_p.add_argument(
         "--tune-metric",

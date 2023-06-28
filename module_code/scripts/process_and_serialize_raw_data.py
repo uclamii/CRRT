@@ -16,7 +16,12 @@ from data.load import (
 def main():
     load_cli_args()
     p = ArgumentParser()
-    p.add_argument("--cohort", type=str, help="Name of cohort to run preprocessing on.")
+    p.add_argument(
+        "--cohort",
+        type=str,
+        choices=["ucla_crrt", "cedars_crrt", "ucla_control"],
+        help="Name of cohort to run preprocessing on.",
+    )
     args = init_cli_args(p)
 
     process_and_serialize_raw_data(
@@ -37,8 +42,14 @@ if __name__ == "__main__":
         `python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_control`
     For the rolling window:
     ```
-    for i in {1..7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_crrt --slide-window-by $i; done
+    for i in {0..7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_crrt --slide-window-by $i; done
+    ```
+    To run rolling window in parallel:
+    ```
+    for i in {0..7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_crrt --slide-window-by $i & done; wait;
     ```
     """
     # sys.argv += ["--cohort", "cedars_crrt"]
+    sys.argv += ["--cohort", "ucla_crrt"]
+    sys.argv += ["--slide-window-by", "1"]
     main()
