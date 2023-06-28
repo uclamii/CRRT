@@ -407,7 +407,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             help="Name of outcome column in outcomes table or preprocessed df.",
         )
         p.add_argument(
-            "--corr_thresh",
+            "--corr-thresh",
             type=float,
             default=None,
             help="Name of outcome column in outcomes table or preprocessed df.",
