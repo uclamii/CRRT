@@ -1,5 +1,30 @@
 # Project Documentation
 
+##  To recreate dev environment
+
+```
+conda env create -n crrt_env --file env.yml
+```
+
+## Data preprocessing
+
+```
+run module_code/scripts/cedars_construct_features_outcomes.py
+```
+```
+run module_code/scripts/map_cedars_* # (labs, medications, procedures)
+```
+
+To align lab units:
+```
+run module_code/scripts/construct_lab_unit_mappings.py
+```
+
+To preprocess the windows:
+Reference: module_code/scripts/process_and_serialize_raw_data.py
+
+## Experiment runs
+
 Everything can be triggered from `main.py` and can be adjusted in `options.yml`. 
 Any flags you don't understand, search the project directory for `--<flag_name>` for its definition in ArgParse which will give an explanation.
 If you want to do a rolling window analysis, execute `python scripts/rolling_window_analysis.py`.

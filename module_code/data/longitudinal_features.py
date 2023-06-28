@@ -5,12 +5,16 @@ from typing import Optional, Union
 from pandas import DataFrame
 from hcuppy.ccs import CCSEngine
 from hcuppy.cpt import CPT
+import numpy as np
+import pandas as pd
 
 from data.lab_proc_utils import (
     align_units,
     force_lab_numeric,
     map_encounter_to_patient,
     map_labs,
+    specific_lab_preproc,
+    force_to_upper_lower_bound,
 )
 from data.longitudinal_utils import (
     aggregate_cat_feature,
@@ -195,7 +199,16 @@ def load_labs(
     labs_df = map_encounter_to_patient(raw_data_dir, labs_df)
     labs_df = labs_df.rename({"RESULT": "RESULTS", "NAME": "COMPONENT_NAME"}, axis=1)
     labs_df = map_labs(labs_df, raw_data_dir)
+    labs_df = specific_lab_preproc(labs_df, lab_name="ABG INSPIRED O2")
+    labs_df["RESULTS"] = force_to_upper_lower_bound(labs_df["RESULTS"])
+    # alignment comes before removing any strings from RESULTS
     labs_df = align_units(labs_df, raw_data_dir)
+    ## keeping only numeric results
+    # Convert non-numeric values to NaN
+    numeric_series = pd.to_numeric(labs_df["RESULTS"], errors="coerce")
+    labs_df = labs_df[numeric_series.notnull()].reset_index(drop=True)
+    # converting to float otherwise skew method breaks in aggregation
+    labs_df["RESULTS"] = pd.to_numeric(labs_df["RESULTS"])
 
     labs_feature = aggregate_ctn_feature(
         labs_df,

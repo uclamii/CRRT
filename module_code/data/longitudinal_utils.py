@@ -222,7 +222,7 @@ def aggregate_cat_feature(
     """
     if time_col:
         # Enforce date columnn is a datetime object
-        cat_df[time_col] = to_datetime(cat_df[time_col])
+        cat_df[time_col] = to_datetime(cat_df[time_col], infer_datetime_format=True)
 
         # mask for time if we have a time_col
         cat_df = apply_time_window_mask(cat_df, time_col, time_window)
@@ -264,7 +264,7 @@ def aggregate_ctn_feature(
     Time interval comes from the resample (e.g. "1D" is daily.)
     """
     # Enforce date columnn is a datetime object
-    ctn_df[time_col] = to_datetime(ctn_df[time_col])
+    ctn_df[time_col] = to_datetime(ctn_df[time_col], infer_datetime_format=True)
     # filter to window
     ctn_df = apply_time_window_mask(ctn_df, time_col, time_window)
 
