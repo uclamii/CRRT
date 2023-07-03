@@ -86,7 +86,7 @@ METRIC_MAP = {
         gt, (pred_probs >= decision_thresh).astype(int), pos_label=0
     ),
     "precision": lambda gt, pred_probs, decision_thresh: precision_score(
-        gt, (pred_probs >= decision_thresh).astype(int)
+        gt, (pred_probs >= decision_thresh).astype(int), zero_division=0.0
     ),
     "conf_matrix": lambda gt, pred_probs, decision_thresh: confusion_matrix(
         gt, (pred_probs >= decision_thresh).astype(int)
