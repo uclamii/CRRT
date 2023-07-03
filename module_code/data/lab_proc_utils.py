@@ -85,7 +85,9 @@ G_TO_MOL = {  # inverse of molecular weight, so mol/g
 
 def specific_lab_preproc(df, lab_name):
     """Method to modify a specific lab"""
+
     # check if lab exists
+    # only run on cohorts that contain <lab_name>
     if lab_name in df["COMPONENT_NAME"].unique():
         ABG_lab_s = (
             df[df["COMPONENT_NAME"] == lab_name]["RESULTS"]
@@ -95,10 +97,6 @@ def specific_lab_preproc(df, lab_name):
         ABG_lab_s[ABG_lab_s > 100] = nan
         df.loc[df["COMPONENT_NAME"] == lab_name, "RESULTS"] = ABG_lab_s
     return df
-
-    # Cedars does not have this, so this will crash any run with cedars
-    # else:
-    #     raise Exception("Lab does not exist.")
 
 
 def force_to_upper_lower_bound(s):
