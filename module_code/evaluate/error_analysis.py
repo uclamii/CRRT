@@ -137,6 +137,7 @@ def model_randomness(
     comparisons = [("fn", "tp"), ("fn", "tn"), ("fp", "tn"), ("fp", "tp")]
     table = {
         "Test Statistic": {},
+        "p-value": {},
         "Reject H0": {},
         "Measure Name": {},
         "Effect Size": {},
@@ -146,13 +147,13 @@ def model_randomness(
         error_type, true_type = comparison  # unpack
         # for each feature
         comparison_name = f"{comparison[0]}_vs_{comparison[1]}"
-        table = {
-            "Test Statistic": {},
-            "p-value": {},
-            "Reject H0": {},
-            "Measure Name": {},
-            "Effect Size": {},
-        }
+        # table = {
+        #     "Test Statistic": {},
+        #     "p-value": {},
+        #     "Reject H0": {},
+        #     "Measure Name": {},
+        #     "Effect Size": {},
+        # }
         for colidx, coln in enumerate(columns):
             # e.g. fn_vs_tp -> SBP (all rows)
             dist_error = subsets[error_type][:, colidx]

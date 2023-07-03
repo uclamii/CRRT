@@ -1,5 +1,5 @@
 from typing import TYPE_CHECKING, Callable, List, Tuple, Dict, Any, Union
-from os.path import dirname, join
+from posixpath import dirname, join
 from os import makedirs
 import mlflow
 from scipy.stats import bootstrap
@@ -27,6 +27,7 @@ def log_figure(figure: "matplotlib.figure.Figure", path: str, ext: str = "svg"):
     path = f"{path}.{ext}"
     if mlflow.active_run() is None:  # log locally if mlflow not running
         # make if does not exist, otherwise overwrite
+        path = join("local_data", path)
         makedirs(dirname(path), exist_ok=True)
         figure.savefig(path, format=ext, bbox_inches="tight")
     else:
@@ -35,6 +36,7 @@ def log_figure(figure: "matplotlib.figure.Figure", path: str, ext: str = "svg"):
 
 def log_text(text: str, path: str):
     if mlflow.active_run() is None:  # log locally if mlflow not running
+        path = join("local_data", path)
         makedirs(dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
@@ -44,11 +46,11 @@ def log_text(text: str, path: str):
 
 def dump_array(prefix: str, name: str, array: Union[pd.Series, np.ndarray]):
     if isinstance(array, pd.Series):
-        array_file = join(name, f"{prefix}_{name}.pkl")
+        array_file = join("local_data", name, f"{prefix}_{name}.pkl")
         makedirs(dirname(array_file), exist_ok=True)  # ensure dir exists
         array.to_pickle(array_file)
     else:  # np array
-        array_file = join(name, f"{prefix}_{name}.npy")
+        array_file = join("local_data", name, f"{prefix}_{name}.npy")
         makedirs(dirname(array_file), exist_ok=True)  # ensure dir exists
         np.save(array_file, array)
     if mlflow.active_run():
@@ -63,7 +65,12 @@ def eval_metric(
     decision_threshold: float = 0.5,
 ) -> float:
     labels_are_homog = len(labels.value_counts()) == 1
-    metrics_ok_homog = {"accuracy"}
+
+    if labels[0] == 1:
+        metrics_ok_homog = {"accuracy", "precision", "recall", "TP", "FN"}
+    else:
+        metrics_ok_homog = {"accuracy", "specificity", "TN", "FP"}
+
     if labels_are_homog and metric_name not in metrics_ok_homog:
         return np.nan
     return metric_fn(labels, pred_probas, decision_threshold)
@@ -79,7 +86,6 @@ def bootstrap_metric(
     decision_threshold: float = 0.5,
     mode: str = "resample",
 ) -> np.ndarray:
-
     # use default scipy bootstraping. outputs distribution of the statistic
     if mode == "scipy":
         bootstrapped_metrics = bootstrap(
@@ -137,7 +143,6 @@ def bootstrap_curve(
     n_resamples: int = 1000,
     random_state: int = 42,
 ) -> Tuple[List[float], List[float]]:
-
     bootstrapped_y_values = []
 
     # get x coordinates from the original curve
@@ -147,7 +152,6 @@ def bootstrap_curve(
 
     random_instance = np.random.RandomState(seed=random_state)
     for i in range(n_resamples):
-
         # bootstrap by sampling with replacement
         X, y = resample(y_pred, y_true, random_state=random_instance, replace=True)
 
@@ -184,7 +188,6 @@ def display_boostrap(
     metrics: Dict[str, Any],
     prefix: str,
 ):
-
     # plot original figure and remove original data to keep consistent figure formatting
     figure = curve_fn.from_predictions(y_true, y_pred)
     for artist in plt.gca().lines + plt.gca().collections:
