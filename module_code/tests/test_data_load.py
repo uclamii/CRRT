@@ -37,6 +37,7 @@ class TestSklearnLoaders(unittest.TestCase):
             max_days_on_crrt=0,
             time_interval=None,
             preprocessed_df_file=None,
+            preselect_features=False,
         )
 
     def multiindex_from_indices(self, indices: List[int]) -> pd.MultiIndex:
@@ -83,7 +84,6 @@ class TestSklearnLoaders(unittest.TestCase):
     )
     @patch("module_code.data.sklearn_loaders.load_data")
     def test_mixed_train_eval_cohorts(self, mock_load_data, mock_transforms):
-
         # They have shared and unique columns
         ucla_crrt_cols = ["f1", "f2"]
         ucla_control_cols = ["f2", "f3"]
@@ -105,7 +105,6 @@ class TestSklearnLoaders(unittest.TestCase):
 
         # default. no selection or reference. should be union
         with self.subTest("Different Columns Union"):
-
             mock_transforms.side_effect = lambda x: lambda y: y
 
             data.setup(self.args)
@@ -118,7 +117,6 @@ class TestSklearnLoaders(unittest.TestCase):
 
         # select feature in only one of the datasets
         with self.subTest("Different Columns With Single Feature Selection"):
-
             mock_transforms.side_effect = lambda x: lambda y: y[["f1"]]
 
             data.setup(self.args)
@@ -131,7 +129,6 @@ class TestSklearnLoaders(unittest.TestCase):
 
         # select features that occur in each dataset uniquely
         with self.subTest("Different Columns With Multiple Feature Selection"):
-
             mock_transforms.side_effect = lambda x: lambda y: y[["f1", "f3"]]
 
             data.setup(self.args)
@@ -144,7 +141,6 @@ class TestSklearnLoaders(unittest.TestCase):
 
         # select features that occur in dataset intersection
         with self.subTest("Intersect Columns With Multiple Feature Selection"):
-
             mock_transforms.side_effect = lambda x: lambda y: y[["f2"]]
 
             data.setup(self.args)
@@ -157,7 +153,6 @@ class TestSklearnLoaders(unittest.TestCase):
 
         # select single feature with reference columns
         with self.subTest("Different Columns Reference Cols"):
-
             mock_transforms.side_effect = lambda x: lambda y: y
 
             data.setup(self.args, reference_cols=["f1"])
@@ -170,7 +165,6 @@ class TestSklearnLoaders(unittest.TestCase):
 
         # select multiple features with reference columns
         with self.subTest("Different Columns Reference Cols Mixed"):
-
             mock_transforms.side_effect = lambda x: lambda y: y
 
             data.setup(self.args, reference_cols=["f1", "f3"])
@@ -183,7 +177,6 @@ class TestSklearnLoaders(unittest.TestCase):
 
         # select non-existing with reference
         with self.subTest("Different Columns Non-existing Reference Cols Mixed"):
-
             mock_transforms.side_effect = lambda x: lambda y: y
 
             data.setup(self.args, reference_cols=["f4"])
