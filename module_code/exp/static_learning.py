@@ -12,15 +12,9 @@ from models.static_models import CRRTStaticPredictor, LOCAL_MODEL_DIR
 from data.subpopulation_utils import generate_filters
 
 
-def load_data(
-    data: SklearnCRRTDataModule,
-    model: CRRTStaticPredictor,
-    args: Namespace,
-    load_local: bool = False,
-    save_local: bool = False,
-) -> Tuple[SklearnCRRTDataModule, CRRTStaticPredictor]:
-    # Load saved model and data files
-
+def load_saved_data(
+    data: SklearnCRRTDataModule, args: Namespace, load_local: bool = False
+) -> SklearnCRRTDataModule:
     # Load from local directory
     if load_local:
         (
@@ -28,8 +22,6 @@ def load_data(
             original_columns,
             data_transform,
         ) = data.load_data_params(LOCAL_DATA_DIR)
-        model.load_model(LOCAL_MODEL_DIR)
-
     # Requires a best_model_path
     else:
         (
@@ -37,20 +29,39 @@ def load_data(
             original_columns,
             data_transform,
         ) = data.load_data_params(join(args.best_model_path, "static_data"))
-        model.load_model(join(args.best_model_path, "static_model"))
 
-    # Setup the data
     data.setup(
         args,
         reference_ids=reference_ids,
         reference_cols=original_columns,
         data_transform=data_transform,
     )
+    return data
 
-    # Save locally
-    if save_local:
-        model.save_model(LOCAL_MODEL_DIR)
-        data.dump_data_params(LOCAL_DATA_DIR)
+
+def load_saved_model(
+    model: CRRTStaticPredictor, args: Namespace, load_local: bool = False
+) -> CRRTStaticPredictor:
+    # Load from local directory
+    if load_local:
+        model.load_model(LOCAL_MODEL_DIR)
+    # Requires a best_model_path
+    else:
+        model.load_model(join(args.best_model_path, "static_model"))
+
+    return model
+
+
+def load_saved_data_and_model(
+    data: SklearnCRRTDataModule,
+    model: CRRTStaticPredictor,
+    args: Namespace,
+    load_local: bool = False,
+) -> Tuple[SklearnCRRTDataModule, CRRTStaticPredictor]:
+    # Load saved model and data files
+
+    data = load_saved_data(data, args, load_local)
+    model = load_saved_model(model, args, load_local)
 
     return data, model
 
@@ -69,33 +80,27 @@ def static_learning(args: Namespace):
     if args.stage == "eval":
         # Load up trained portion and hparams - args.best_model_path required if reference_window is True
 
-        if args.rolling_evaluation:
-            # if tuning the best model will never be dumped, so we dump it on the evaluation of the best model on original reference window
-            # also save for non-tuning experiments. redundant if recently trained, but useful if wanting to evaluate on any arbitrary experiment
+        # If running all experiments together (train and then immediately eval), then should never have to set reference_window since this is done automatically
+        # Cases
+        # 1. Tuning & rolling
+        #   After training, automatically performs final eval run, sets args.reference_window and args.best_model_path, and saves local
+        # 2. Not tuning & rolling
+        #   After training, automatically saves locally if rolling_evaluation is set. Don't need reference_window
+        data, model = load_saved_data_and_model(
+            data,
+            model,
+            args,
+            load_local=(args.rolling_evaluation and not args.reference_window),
+        )
 
-            # If running all experiments together (train and then immediately eval), then should never have to set reference_window since this is done automatically
-            # Cases
-            # 1. Tuning & rolling
-            #   After training, automatically performs final eval run, sets args.reference_window and args.best_model_path, and saves local
-            # 2. Not tuning & rolling
-            #   After training, automatically saves locally if rolling_evaluation is set. Don't need reference_window
-            # If wanting to perform post-hoc rolling window evaluation on a previous training run, then should set reference_window on the first evaluation
-            if args.reference_window:
-                data, model = load_data(
-                    data, model, args, load_local=False, save_local=True
-                )
+        # if tuning the best model will never be dumped, so we dump it on the evaluation of the best model on original reference window
+        # also save for non-tuning experiments. redundant if recently trained, as explained in the comment above
+        # but useful if wanting to evaluate on any arbitrary experiment.
+        #   If wanting to perform post-hoc rolling window evaluation on a previous training run, then should set reference_window on the first evaluation
+        if args.rolling_evaluation and args.reference_window:
+            model.save_model(LOCAL_MODEL_DIR)
+            data.dump_data_params(LOCAL_DATA_DIR)
 
-            # Override with already trained model
-            else:
-                data, model = load_data(
-                    data, model, args, load_local=True, save_local=False
-                )
-
-        # Override with already trained model
-        else:
-            data, model = load_data(
-                data, model, args, load_local=False, save_local=False
-            )
         return model.evaluate(data, "test")
     else:  # Training / tuning
         data.setup(args)
