@@ -93,10 +93,12 @@ def specific_lab_preproc(df, lab_name):
             .astype(float)
         )
         ABG_lab_s[ABG_lab_s > 100] = nan
-        df.loc[df["COMPONENT_NAME"] == "ABG INSPIRED O2", "RESULTS"] = ABG_lab_s
-        return df
-    else:
-        raise Exception("Lab does not exist.")
+        df.loc[df["COMPONENT_NAME"] == lab_name, "RESULTS"] = ABG_lab_s
+    return df
+
+    # Cedars does not have this, so this will crash any run with cedars
+    # else:
+    #     raise Exception("Lab does not exist.")
 
 
 def force_to_upper_lower_bound(s):
@@ -136,7 +138,7 @@ def map_encounter_to_patient(
     df["IP_PATIENT_ID"] = df["IP_PATIENT_ID_x"].combine_first(df["IP_PATIENT_ID_y"])
 
     # Remove the created columns
-    df = df.drop(["IP_PATIENT_ID_x", "IP_PATIENT_ID_y"], 1)
+    df = df.drop(["IP_PATIENT_ID_x", "IP_PATIENT_ID_y"], axis=1)
 
     return df
 
