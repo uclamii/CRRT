@@ -46,15 +46,19 @@ def log_text(text: str, path: str):
 
 def dump_array(prefix: str, name: str, array: Union[pd.Series, np.ndarray]):
     if isinstance(array, pd.Series):
-        array_file = join("local_data", name, f"{prefix}_{name}.pkl")
-        makedirs(dirname(array_file), exist_ok=True)  # ensure dir exists
-        array.to_pickle(array_file)
+        array_file = join(name, f"{prefix}_{name}.pkl")
+        makedirs(
+            dirname(join("local_data", array_file)), exist_ok=True
+        )  # ensure dir exists
+        array.to_pickle(join("local_data", array_file))
     else:  # np array
-        array_file = join("local_data", name, f"{prefix}_{name}.npy")
-        makedirs(dirname(array_file), exist_ok=True)  # ensure dir exists
-        np.save(array_file, array)
+        array_file = join(name, f"{prefix}_{name}.npy")
+        makedirs(
+            dirname(join("local_data", array_file)), exist_ok=True
+        )  # ensure dir exists
+        np.save(join("local_data", array_file), array)
     if mlflow.active_run():
-        mlflow.log_artifact(array_file, dirname(array_file))
+        mlflow.log_artifact(join("local_data", array_file), dirname(array_file))
 
 
 def eval_metric(
