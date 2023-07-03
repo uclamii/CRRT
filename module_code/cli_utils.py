@@ -117,6 +117,18 @@ def add_global_args(
         help="Specifying if to preprocess data only until the start date of CRRT, or to go all the way through the end date of CRRT, will be used if no post-start-delta passed.",
     )
     time_p.add_argument(
+        "--rolling-evaluation",
+        default=False,
+        type=bool,
+        help="Flag for specifying if performing rolling windown analysis",
+    )
+    time_p.add_argument(
+        "--reference-window",
+        default=False,
+        type=bool,
+        help="If rolling-evaluation is True, this flag specifies which run is the window for training",
+    )
+    time_p.add_argument(
         "--slide-window-by",
         type=int,
         default=None,

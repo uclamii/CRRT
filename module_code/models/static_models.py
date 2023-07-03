@@ -53,6 +53,7 @@ from evaluate.utils import (
     confidence_interval,
 )
 
+LOCAL_MODEL_DIR = join("local_data", "static_model")
 STATIC_MODEL_FNAME = "static_model.pkl"
 STATIC_HPARAM_FNAME = "static_hparams.yml"
 
@@ -91,16 +92,16 @@ METRIC_MAP = {
         gt, (pred_probs >= decision_thresh).astype(int)
     ),
     "TN": lambda gt, pred_probs, decision_thresh: confusion_matrix(
-        gt, (pred_probs >= decision_thresh).astype(int)
+        gt, (pred_probs >= decision_thresh).astype(int), labels=[0, 1]
     )[0, 0],
     "FN": lambda gt, pred_probs, decision_thresh: confusion_matrix(
-        gt, (pred_probs >= decision_thresh).astype(int)
+        gt, (pred_probs >= decision_thresh).astype(int), labels=[0, 1]
     )[1, 0],
     "TP": lambda gt, pred_probs, decision_thresh: confusion_matrix(
-        gt, (pred_probs >= decision_thresh).astype(int)
+        gt, (pred_probs >= decision_thresh).astype(int), labels=[0, 1]
     )[1, 1],
     "FP": lambda gt, pred_probs, decision_thresh: confusion_matrix(
-        gt, (pred_probs >= decision_thresh).astype(int)
+        gt, (pred_probs >= decision_thresh).astype(int), labels=[0, 1]
     )[0, 1],
 }
 
@@ -386,10 +387,6 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     def fit(self, data: SklearnCRRTDataModule):
         seed_everything(self.seed)
         self.static_model.model.fit(*data.train)
-        if mlflow.active_run() is None:
-            self.save_model(join("local_data", "static_model"))
-        else:
-            self.log_model()
         return self
 
     def transform(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
@@ -495,10 +492,10 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         metrics = None
 
         # log predict probabilities
-        # dump_array(prefix, "predict_probas", pred_probas)
-        # # log labels for convenient post-hoc analysis if required
-        # if stage == "test":
-        #     dump_array(prefix, "labels", labels)
+        dump_array(prefix, "predict_probas", pred_probas)
+        # log labels for convenient post-hoc analysis if required
+        if stage == "test":
+            dump_array(prefix, "labels", labels)
 
         pred_probas = pred_probas.values
 
