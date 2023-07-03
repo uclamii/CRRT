@@ -142,7 +142,6 @@ class TestAggregateFeature(unittest.TestCase):
         )
 
         pd.testing.assert_frame_equal(correct_df, df.droplevel("Start Date"))
-        # self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
     @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
     def test_time_interval_ctn(self, mock_masked_df):
@@ -201,7 +200,6 @@ class TestAggregateFeature(unittest.TestCase):
             time_interval=time_interval,
         )
         pd.testing.assert_frame_equal(correct_df, df.droplevel("Start Date"))
-        # self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
     @patch("module_code.data.longitudinal_utils.apply_time_window_mask")
     def test_time_interval_cat(self, mock_masked_df):
@@ -241,7 +239,6 @@ class TestAggregateFeature(unittest.TestCase):
             time_interval=time_interval,
         )
         pd.testing.assert_frame_equal(correct_df, df.droplevel("Start Date"))
-        # self.assertTrue(correct_df.equals(df.droplevel("Start Date")))
 
 
 class TestWindowMask(unittest.TestCase):
