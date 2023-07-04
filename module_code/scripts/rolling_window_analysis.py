@@ -64,6 +64,7 @@ if __name__ == "__main__":
                     {
                         "stage": "eval",
                         "rolling_evaluation": True,
+                        "tune_n_trials": 0,
                         "max_days_on_crrt": max_days_on_crrt,
                     }
                 )
@@ -78,11 +79,11 @@ max_slide=1
 retrain=false  # Comment to turn true
 # Run normally once
 python module_code/main.py --slide_window_by 0 --rolling_evaluation
-python module_code/main.py --slide_window_by 0 --rolling_evaluation --stage "eval"
+python module_code/main.py --slide_window_by 0 --rolling_evaluation --stage "eval" --tune_n_trials 0
 for ((i=1; i <= $max_slide; i++)); do
     if $retrain; then
         python module_code/main.py --slide_window_by $i --rolling_evaluation
     fi
-    python module_code/main.py --slide_window_by $i --rolling_evaluation --stage "eval" 
+    python module_code/main.py --slide_window_by $i --rolling_evaluation --stage "eval" --tune_n_trials 0
 done
 """
