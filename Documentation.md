@@ -20,10 +20,24 @@ To align lab units:
 run module_code/scripts/construct_lab_unit_mappings.py
 ```
 
-To preprocess the windows:
+To preprocess the windows and go straight to evaluation:
 Reference: module_code/scripts/process_and_serialize_raw_data.py
 
 ## Experiment runs
+
+To run different experiments:
+options.yml
+- tune-n-trials: if >0 does tuning, Nx5 -> number of models used are 5 in each trial
+
+```
+run python scripts/rolling_window_analysis.py
+```
+parameters to set in scripts:
+- max_days_on_crrt=7, if 7 day max window in crrt
+- num_days_to_slide_fwd=7, just to slide this 7 days forward
+- num_days_to_slide_bwd = -3, just to slide this 3 days backward
+
+
 
 Everything can be triggered from `main.py` and can be adjusted in `options.yml`. 
 Any flags you don't understand, search the project directory for `--<flag_name>` for its definition in ArgParse which will give an explanation.
@@ -100,3 +114,14 @@ All the relevant files are on the UCLA Health Box folder.
 
 ## Version Control
 We are currently using UCLA Health Azure environment, in the `CRRT` repo.
+
+
+## Production notes:
+
+### Data preprocessing
+
+Modify the preprocess and serialize script to run on the current day and the outcomes column used by the pipeline
+
+### Model Testing
+
+Load model as in static learning.py, evaluating on the testing data and return model predictions.
