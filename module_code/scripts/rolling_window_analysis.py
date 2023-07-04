@@ -17,20 +17,18 @@ if __name__ == "__main__":
     orig_args = init_cli_args()
     args = deepcopy(orig_args)
 
-    # Refer to get_optuna_grid for pre_start_delta
-    max_window_tuning_size = (
-        7 if args.tune_n_trials else get_delta(args.pre_start_delta).days
-    )
-
+    # user defined parameter
+    max_days_on_crrt = 7
     # set slide_window_by 0 and run
     dargs = vars(args)
     dargs.update(
         {
             "rolling_evaluation": True,
             "slide_window_by": 0,
-            "max_days_on_crrt": max_window_tuning_size,
+            "max_days_on_crrt": max_days_on_crrt,
         }
     )
+
     main(args)
 
     # Evaluate if not tuning
@@ -40,19 +38,25 @@ if __name__ == "__main__":
                 "rolling_evaluation": True,
                 "slide_window_by": 0,
                 "stage": "eval",
-                "max_days_on_crrt": max_window_tuning_size,
+                "max_days_on_crrt": max_days_on_crrt,
             }
         )
         main(args)
 
+    # TODO: assert that args contain best eval args when evaluating
+
     # this should be updated from tuning internally, or just set properly
-    num_days_to_slide = get_delta(args.pre_start_delta).days
+    # PP Note: when tuning is set 1, pre_Start delta is set to the best model value
+    # this means the algorithm does not run for 7 days in the future. it just runs for one or non if range(1,1)
+    # decided to hardcode it to 7
+    num_days_to_slide_fwd = 7
+    num_days_to_slide_bwd = -3
     # don't include the last day becaues potentially people with exactly N days of data will not have that much data / not be many
     # Patients with fewer days won't even appear anymore after sliding so far.
     # slide after and slide before
-    for range in [range(1, num_days_to_slide), range(-3, 0)]:
+    for range in [range(1, num_days_to_slide_fwd), range(num_days_to_slide_bwd, 0)]:
         for i in range:
-            args = deepcopy(orig_args)
+            args = deepcopy(orig_args)  # original args overwrite optimal ones
             dargs = vars(args)
             dargs.update({"slide_window_by": i})
             if not retrain:  # just evaluate and make sure not to tune
@@ -60,7 +64,7 @@ if __name__ == "__main__":
                     {
                         "stage": "eval",
                         "rolling_evaluation": True,
-                        "max_days_on_crrt": num_days_to_slide,
+                        "max_days_on_crrt": max_days_on_crrt,
                     }
                 )
             main(args)
