@@ -62,11 +62,7 @@ def run_experiment(args: Namespace, trials=None):
 
 
 def get_mlflow_model_uri(best_run: Run) -> str:
-    return join(
-        # best_run.info.artifact_uri[len("file://") :], "static_model", STATIC_MODEL_FNAME
-        best_run.info.artifact_uri[len("file://") :],
-        "static_model",
-    )
+    return best_run.info.artifact_uri[len("file://") :]
 
 
 def get_best_trial_mlflow_run(
@@ -74,7 +70,7 @@ def get_best_trial_mlflow_run(
 ) -> Run:
     """Get the mlflow run id of the best optuna trial for evaluation."""
     best_args = best_trial.params
-    client = MlflowClient(join(args.local_log_path, "mlruns"))
+    client = MlflowClient(f"file://{join(args.local_log_path, 'mlruns')}")
     # Get the trial based on the number (0 indexed)
     # Get most recent hyperparameter trial for the given run name
     best_run = client.search_runs(
@@ -103,7 +99,7 @@ def evaluate_post_tuning(args: Namespace, study: Study):
     for param_name, param_val in best_trial.params.items():
         if param_name.startswith(modeln):
             # exclude the rf_ if modeln is rf
-            raw_name = param_name[len(f"{args.modeln}") :]
+            raw_name = param_name[len(f"{modeln}") + 1 :]
             model_kwargs[raw_name] = param_val
         else:
             top_level_params[param_name] = param_val
@@ -118,6 +114,8 @@ def evaluate_post_tuning(args: Namespace, study: Study):
             "best_run_id": best_run.info.run_id,
             "best_model_path": best_model_path,
             "stage": "eval",
+            "reference_window": True,
+            "rolling_evaluation": True,  # saves to local
         }
     )
     # Run

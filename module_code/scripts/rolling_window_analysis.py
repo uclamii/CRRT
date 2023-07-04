@@ -21,12 +21,21 @@ if __name__ == "__main__":
     max_days_on_crrt = 7
     # set slide_window_by 0 and run
     dargs = vars(args)
-    dargs.update({"slide_window_by": 0, "max_days_on_crrt": max_days_on_crrt})
+    dargs.update(
+        {
+            "rolling_evaluation": True,
+            "slide_window_by": 0,
+            "max_days_on_crrt": max_days_on_crrt,
+        }
+    )
+
     main(args)
+
     # Evaluate if not tuning
     if not args.tune_n_trials:
         dargs.update(
             {
+                "rolling_evaluation": True,
                 "slide_window_by": 0,
                 "stage": "eval",
                 "max_days_on_crrt": max_days_on_crrt,
@@ -54,7 +63,7 @@ if __name__ == "__main__":
                 dargs.update(
                     {
                         "stage": "eval",
-                        "tune_n_trials": 0,
+                        "rolling_evaluation": True,
                         "max_days_on_crrt": max_days_on_crrt,
                     }
                 )
@@ -68,12 +77,12 @@ if __name__ == "__main__":
 max_slide=1
 retrain=false  # Comment to turn true
 # Run normally once
-python module_code/main.py --slide_window_by 0
-python module_code/main.py --slide_window_by 0 --stage "eval"
+python module_code/main.py --slide_window_by 0 --rolling_evaluation
+python module_code/main.py --slide_window_by 0 --rolling_evaluation --stage "eval"
 for ((i=1; i <= $max_slide; i++)); do
     if $retrain; then
-        python module_code/main.py --slide_window_by $i 
+        python module_code/main.py --slide_window_by $i --rolling_evaluation
     fi
-    python module_code/main.py --slide_window_by $i --stage "eval" --tune_n_trials 0
+    python module_code/main.py --slide_window_by $i --rolling_evaluation --stage "eval" 
 done
 """

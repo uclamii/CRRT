@@ -4,53 +4,32 @@ import pickle
 from typing import Any, Callable, List, Tuple, Union, Dict
 import cloudpickle  # Allows serializing functions
 import pandas as pd
-from os.path import join
+from posixpath import join
+import mlflow
 
-from data.sklearn_loaders import SklearnCRRTDataModule
-from models.static_models import CRRTStaticPredictor
+from data.sklearn_loaders import SklearnCRRTDataModule, LOCAL_DATA_DIR
+from models.static_models import CRRTStaticPredictor, LOCAL_MODEL_DIR
 from data.subpopulation_utils import generate_filters
 
-SPLIT_IDS_PATH = join("local_data", "split_ids.pkl")
-COLUMNS_PATH = join("local_data", "columns.pkl")
-DATA_TRANSFORM_PATH = join("local_data", "data_transform.pkl")
-MODEL_DIR = join("local_data", "static_model")
 
-
-def dump_artifacts_for_rolling_windows(
-    data: SklearnCRRTDataModule, model: CRRTStaticPredictor
-):
-    # this will dump the model D -> D+i, and D+1 retrained and then evaluated
-    model.save_model(MODEL_DIR)  # will ensure path exists
-    with open(SPLIT_IDS_PATH, "wb") as f:
-        pickle.dump(data.split_pt_ids, f)
-    with open(COLUMNS_PATH, "wb") as f:  # dump  all columns to align
-        pickle.dump(data.columns, f)
-    with open(DATA_TRANSFORM_PATH, "wb") as f:
-        # Ref: https://github.com/scikit-learn/scikit-learn/issues/17390
-        cloudpickle.dump(data.data_transform, f)
-
-
-def load_data(args: Namespace) -> SklearnCRRTDataModule:
-    filters = generate_filters()
-    # flatten
-    filters = {k: v for groupname, d in filters.items() for k, v in d.items()}
-    data = SklearnCRRTDataModule.from_argparse_args(args, filters=generate_filters())
-
-    # Pass the original datasets split pt_ids if doing rolling window analysis
-    if args.slide_window_by:
-        with open(SPLIT_IDS_PATH, "rb") as f:
-            reference_ids = pickle.load(f)
-            reference_ids = {
-                split: pd.Index(split_ids) for split, split_ids in reference_ids.items()
-            }  # enforce Index
-        with open(COLUMNS_PATH, "rb") as f:
-            original_columns = pickle.load(f)
-        with open(DATA_TRANSFORM_PATH, "rb") as f:
-            data_transform = cloudpickle.load(f)
+def load_saved_data(
+    data: SklearnCRRTDataModule, args: Namespace, load_local: bool = False
+) -> SklearnCRRTDataModule:
+    # Load from local directory
+    if load_local:
+        (
+            reference_ids,
+            original_columns,
+            data_transform,
+        ) = data.load_data_params(LOCAL_DATA_DIR)
+    # Requires a best_model_path
     else:
-        reference_ids = None
-        original_columns = None
-        data_transform = None
+        (
+            reference_ids,
+            original_columns,
+            data_transform,
+        ) = data.load_data_params(join(args.best_model_path, "static_data"))
+
     data.setup(
         args,
         reference_ids=reference_ids,
@@ -60,34 +39,89 @@ def load_data(args: Namespace) -> SklearnCRRTDataModule:
     return data
 
 
+def load_saved_model(
+    model: CRRTStaticPredictor, args: Namespace, load_local: bool = False
+) -> CRRTStaticPredictor:
+    # Load from local directory
+    if load_local:
+        model.load_model(LOCAL_MODEL_DIR)
+    # Requires a best_model_path
+    else:
+        model.load_model(join(args.best_model_path, "static_model"))
+
+    return model
+
+
+def load_saved_data_and_model(
+    data: SklearnCRRTDataModule,
+    model: CRRTStaticPredictor,
+    args: Namespace,
+    load_local: bool = False,
+) -> Tuple[SklearnCRRTDataModule, CRRTStaticPredictor]:
+    # Load saved model and data files
+
+    data = load_saved_data(data, args, load_local)
+    model = load_saved_model(model, args, load_local)
+
+    return data, model
+
+
 def static_learning(args: Namespace):
-    # need to update CRRTDataModule
-    # TODO: this can be cleaned up /maybe moved and then names passed as flag to select?
+    # Create CRRTDataModule
+    filters = generate_filters()
+    filters = {
+        k: v for groupname, d in filters.items() for k, v in d.items()
+    }  # flatten
+    data = SklearnCRRTDataModule.from_argparse_args(args, filters=generate_filters())
 
-    data = load_data(args)
-
-    # Then need to update the predictor
+    # Then create the predictor
     model = CRRTStaticPredictor.from_argparse_args(args)
+
     if args.stage == "eval":
-        # Load up trained portion and hparams
-        if (
-            not args.tune_n_trials and args.slide_window_by == 0
-        ) or args.slide_window_by:  # Override with already trained model
-            model.load_model(MODEL_DIR)
-        else:  # executed at the end of tuning/one-off and if slide_window_by is not 0/None
-            # load weights and hparams
-            model.load_model(args.best_model_path)
-            # if tuning the best model will never be dumped, so we dump it on the evaluation of the best model on original reference window
-            if args.tune_n_trials and args.slide_window_by == 0:
-                dump_artifacts_for_rolling_windows(data, model)
+        # Load up trained portion and hparams - args.best_model_path required if reference_window is True
+
+        # If running all experiments together (train and then immediately eval), then should never have to set reference_window since this is done automatically
+        # Cases
+        # 1. Tuning & rolling
+        #   After training, automatically performs final eval run, sets args.reference_window and args.best_model_path, and saves local
+        # 2. Not tuning & rolling
+        #   After training, automatically saves locally if rolling_evaluation is set. Don't need reference_window
+        data, model = load_saved_data_and_model(
+            data,
+            model,
+            args,
+            load_local=(args.rolling_evaluation and not args.reference_window),
+        )
+
+        # if tuning the best model will never be dumped, so we dump it on the evaluation of the best model on original reference window
+        # also save for non-tuning experiments. redundant if recently trained, as explained in the comment above
+        # but useful if wanting to evaluate on any arbitrary experiment.
+        #   If wanting to perform post-hoc rolling window evaluation on a previous training run, then should set reference_window on the first evaluation
+        if args.rolling_evaluation and args.reference_window:
+            model.save_model(LOCAL_MODEL_DIR)
+            data.dump_data_params(LOCAL_DATA_DIR)
+
         return model.evaluate(data, "test")
     else:  # Training / tuning
+        data.setup(args)
+
         model.fit(data)
+
+        # Some redundancy here for saving models
+        # For tuning, mlflow is basically always on so log the model
+        if mlflow.active_run() is None:
+            model.save_model(LOCAL_MODEL_DIR)
+            data.dump_data_params(LOCAL_DATA_DIR)
+        else:
+            model.log_model()
+            data.dump_data_params()
 
         # only want to serialize artifacts on training if we're not tuning and we're training the model on the original reference window (not slided yet)
         # functionally slide_window_by = 0 == None, but 0 indicates there will be sliding in the future
-        if not args.tune_n_trials and args.slide_window_by == 0:
-            dump_artifacts_for_rolling_windows(data, model)
+        if args.rolling_evaluation:
+            if not args.tune_n_trials:
+                model.save_model(LOCAL_MODEL_DIR)
+                data.dump_data_params(LOCAL_DATA_DIR)
 
         # informs tuning, different from testing/eval
         return model.evaluate(data, "val")

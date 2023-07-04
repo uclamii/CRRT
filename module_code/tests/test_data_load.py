@@ -37,6 +37,7 @@ class TestSklearnLoaders(unittest.TestCase):
             max_days_on_crrt=0,
             time_interval=None,
             preprocessed_df_file=None,
+            preselect_features=False,
         )
 
     def multiindex_from_indices(self, indices: List[int]) -> pd.MultiIndex:
@@ -53,6 +54,8 @@ class TestSklearnLoaders(unittest.TestCase):
         data = rng.integers(0, 100, (nsamples, nfeatures))
         outcome = rng.integers(0, 1, (nsamples, 1))
 
+        # pd.DataFrame(np.concatenate([data,outcome],axis=1), columns=['f1','f2','outcome'], index = pd.MultiIndex.from_tuples([(idx, 0) for idx in [0,2,4,6,8]], names=["IP_PATIENT_ID", "Start Date"]))
+
         return pd.DataFrame(
             np.concatenate([data, outcome], axis=1),
             columns=feature_names + ["outcome"],
@@ -63,7 +66,7 @@ class TestSklearnLoaders(unittest.TestCase):
         def load_data(*args, **kwargs):
             """Load depending on cohort, make up data."""
             # have same columns different indices. required to have outcome
-            if args[-1] == "ucla_crrt" or kwargs.get("cohort", "") == "ucla_control":
+            if args[-1] == "ucla_crrt" or kwargs.get("cohort", "") == "ucla_crrt":
                 return self.create_mock_df(
                     feature_names[0], list(range(1, nsamples, 2))
                 )  # indices odd
@@ -75,6 +78,118 @@ class TestSklearnLoaders(unittest.TestCase):
                 )  # indices even
 
         return load_data
+
+    @patch(
+        "module_code.data.sklearn_loaders.SklearnCRRTDataModule.get_post_split_transform"
+    )
+    @patch("module_code.data.sklearn_loaders.load_data")
+    def test_mixed_train_eval_cohorts(self, mock_load_data, mock_transforms):
+        # They have shared and unique columns
+        ucla_crrt_cols = ["f1", "f2"]
+        ucla_control_cols = ["f2", "f3"]
+        all_cols = ["f1", "f2", "f3"]
+
+        mock_load_data.side_effect = self.load_data_side_effect(
+            [ucla_crrt_cols, ucla_control_cols],
+            self.nsamples,
+        )
+
+        data = SklearnCRRTDataModule(
+            SEED,
+            outcome_col_name=self.outcome_col_name,
+            train_val_cohort="ucla_crrt+ucla_control",
+            eval_cohort="ucla_crrt+ucla_control",
+            val_split_size=self.val_split_size,
+            test_split_size=self.test_split_size,
+        )
+
+        # default. no selection or reference. should be union
+        with self.subTest("Different Columns Union"):
+            mock_transforms.side_effect = lambda x: lambda y: y
+
+            data.setup(self.args)
+
+            # should be outer join
+            np.testing.assert_array_equal(all_cols, data.test[0].columns)
+            np.testing.assert_array_equal(
+                data.test[0].shape[0], self.nsamples * self.test_split_size
+            )
+
+        # select feature in only one of the datasets
+        with self.subTest("Different Columns With Single Feature Selection"):
+            mock_transforms.side_effect = lambda x: lambda y: y[["f1"]]
+
+            data.setup(self.args)
+
+            # should only have selected feature
+            np.testing.assert_array_equal(["f1"], data.test[0].columns)
+            np.testing.assert_array_equal(
+                data.test[0].shape[0], self.nsamples * self.test_split_size
+            )
+
+        # select features that occur in each dataset uniquely
+        with self.subTest("Different Columns With Multiple Feature Selection"):
+            mock_transforms.side_effect = lambda x: lambda y: y[["f1", "f3"]]
+
+            data.setup(self.args)
+
+            # should only have selected feature
+            np.testing.assert_array_equal(["f1", "f3"], data.test[0].columns)
+            np.testing.assert_array_equal(
+                data.test[0].shape[0], self.nsamples * self.test_split_size
+            )
+
+        # select features that occur in dataset intersection
+        with self.subTest("Intersect Columns With Multiple Feature Selection"):
+            mock_transforms.side_effect = lambda x: lambda y: y[["f2"]]
+
+            data.setup(self.args)
+
+            # should only have selected feature
+            np.testing.assert_array_equal(["f2"], data.test[0].columns)
+            np.testing.assert_array_equal(
+                data.test[0].shape[0], self.nsamples * self.test_split_size
+            )
+
+        # select single feature with reference columns
+        with self.subTest("Different Columns Reference Cols"):
+            mock_transforms.side_effect = lambda x: lambda y: y
+
+            data.setup(self.args, reference_cols=["f1"])
+
+            # should only have reference feature
+            np.testing.assert_array_equal(["f1"], data.test[0].columns)
+            np.testing.assert_array_equal(
+                data.test[0].shape[0], self.nsamples * self.test_split_size
+            )
+
+        # select multiple features with reference columns
+        with self.subTest("Different Columns Reference Cols Mixed"):
+            mock_transforms.side_effect = lambda x: lambda y: y
+
+            data.setup(self.args, reference_cols=["f1", "f3"])
+
+            # should only have reference feature
+            np.testing.assert_array_equal(["f1", "f3"], data.test[0].columns)
+            np.testing.assert_array_equal(
+                data.test[0].shape[0], self.nsamples * self.test_split_size
+            )
+
+        # select non-existing with reference
+        with self.subTest("Different Columns Non-existing Reference Cols Mixed"):
+            mock_transforms.side_effect = lambda x: lambda y: y
+
+            data.setup(self.args, reference_cols=["f4"])
+
+            # should only have reference feature
+            np.testing.assert_array_equal(["f4"], data.test[0].columns)
+            np.testing.assert_array_equal(
+                [np.nan] * int(self.nsamples * self.test_split_size),
+                data.test[0]["f4"].to_list(),
+            )
+            np.testing.assert_array_equal(
+                data.test[0].shape[0], self.nsamples * self.test_split_size
+            )
 
     @patch("module_code.data.sklearn_loaders.load_data")
     def test_same_train_eval_cohorts(self, mock_load_data_fn):
@@ -158,11 +273,16 @@ class TestSklearnLoaders(unittest.TestCase):
             # should be outer join
             np.testing.assert_array_equal(all_cols, data.test[0].columns)
 
+    @patch(
+        "module_code.data.sklearn_loaders.SklearnCRRTDataModule.get_post_split_transform"
+    )
     @patch("module_code.data.sklearn_loaders.load_data")
-    def test_filters(self, mock_load_data):
+    def test_filters(self, mock_load_data, mock_transforms):
         mock_load_data.side_effect = self.load_data_side_effect(
             [self.feature_names, self.feature_names], self.nsamples
         )
+        # override transform since filtering happens BEFORE transformation
+        mock_transforms.side_effect = lambda x: lambda y: y
 
         data = SklearnCRRTDataModule(
             SEED,
@@ -173,7 +293,7 @@ class TestSklearnLoaders(unittest.TestCase):
             val_split_size=0.01,
         )
         data.setup(self.args)
-        train_df = data.train[0]
+        train_df = data.train[0].to_numpy()
 
         def test_filters_equal(
             true_filter: Dict[str, np.ndarray], est_filter: Dict[str, np.ndarray]

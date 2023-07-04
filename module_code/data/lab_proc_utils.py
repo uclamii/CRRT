@@ -85,7 +85,9 @@ G_TO_MOL = {  # inverse of molecular weight, so mol/g
 
 def specific_lab_preproc(df, lab_name):
     """Method to modify a specific lab"""
+
     # check if lab exists
+    # only run on cohorts that contain <lab_name>
     if lab_name in df["COMPONENT_NAME"].unique():
         ABG_lab_s = (
             df[df["COMPONENT_NAME"] == lab_name]["RESULTS"]
@@ -93,10 +95,8 @@ def specific_lab_preproc(df, lab_name):
             .astype(float)
         )
         ABG_lab_s[ABG_lab_s > 100] = nan
-        df.loc[df["COMPONENT_NAME"] == "ABG INSPIRED O2", "RESULTS"] = ABG_lab_s
-        return df
-    else:
-        raise Exception("Lab does not exist.")
+        df.loc[df["COMPONENT_NAME"] == lab_name, "RESULTS"] = ABG_lab_s
+    return df
 
 
 def force_to_upper_lower_bound(s):
@@ -136,7 +136,7 @@ def map_encounter_to_patient(
     df["IP_PATIENT_ID"] = df["IP_PATIENT_ID_x"].combine_first(df["IP_PATIENT_ID_y"])
 
     # Remove the created columns
-    df = df.drop(["IP_PATIENT_ID_x", "IP_PATIENT_ID_y"], 1)
+    df = df.drop(["IP_PATIENT_ID_x", "IP_PATIENT_ID_y"], axis=1)
 
     return df
 

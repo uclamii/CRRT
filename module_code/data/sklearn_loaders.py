@@ -3,6 +3,12 @@ from functools import reduce
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
+from posixpath import join
+from os import makedirs
+import mlflow
+import pickle
+import cloudpickle
+import joblib
 
 # from sktime.transformations.series.impute import Imputer
 # explicitly require this experimental feature
@@ -28,6 +34,11 @@ ADDITIONAL_CATEGORICAL_COLS = [
     "heart_pt_indicator",
     "infection_pt_indicator",
 ]
+
+LOCAL_DATA_DIR = join("local_data", "static_data")
+SPLIT_IDS_FNAME = "split_ids.pkl"
+COLUMNS_FNAME = "columns.pkl"
+DATA_TRANSFORM_FNAME = "data_transform.pkl"
 
 
 class SklearnCRRTDataModule(AbstractCRRTDataModule):
@@ -79,6 +90,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         """
         Ops performed across GPUs. e.g. splits, transforms, etc.
         """
+        if args.preselect_features and reference_cols is None:
+            reference_cols = self.preload_data_for_featselect(args)
+
         X, y = self.load_data_and_additional_preproc(
             args, self.train_val_cohort, reference_cols
         )
@@ -148,6 +162,25 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             X, y = X_y_tuples[split]
             setattr(self, split, (self.data_transform(X), y))
 
+    def preload_data_for_featselect(self, args: Namespace):
+        cohorts = ["ucla_crrt", "cedars_crrt", "ucla_control"]
+        X_all_cohorts = []
+        for single_cohort in cohorts:
+            X, _ = self.load_data_and_additional_preproc(args, single_cohort)
+            X_all_cohorts.append(X)
+
+        all_cols = X_all_cohorts[0].columns.intersection(X_all_cohorts[1].columns)
+        for i in range(2, len(X_all_cohorts)):
+            all_cols = all_cols.intersection(X_all_cohorts[i].columns)
+
+        print(f"{len(all_cols)} columns across all cohorts")
+        for i in range(len(X_all_cohorts)):
+            print(
+                f"{len(X_all_cohorts[i].columns)} in {cohorts[i]} cohort. Removed {len(X_all_cohorts[i].columns.difference(all_cols))} columns"
+            )
+
+        return all_cols
+
     def load_data_and_additional_preproc(
         self, args: Namespace, cohort: str, reference_cols=None
     ) -> Tuple[pd.DataFrame, pd.Series]:
@@ -188,7 +221,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # remove unwanted columns, esp non-numeric ones, before pad and pack
         X = X.select_dtypes(["number"])
 
-        # add reference cols if not none
+        # use reference cols if not none
         if reference_cols is not None:
             # make sure columns in original exist here (but they're all missing)
             # the missing values will be simple imputed (ctn) and 0 imputed (nan)
@@ -208,10 +241,13 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         combine: str = "AND",
     ) -> pd.Series:
         def apply_check(col: str, val: Union[int, str, Tuple[int, int]]) -> pd.Series:
-            if isinstance(val, tuple):  # assumes [a, b)
-                assert len(val) == 2, "Tuple passed isn't length two [a, b)."
-                return (df[cols] >= val[0]) & (df[cols] < val[1])
-            return df[col] == val
+            if col in df.columns:
+                if isinstance(val, tuple):  # assumes [a, b)
+                    assert len(val) == 2, "Tuple passed isn't length two [a, b)."
+                    return (df[cols] >= val[0]) & (df[cols] < val[1])
+                return df[col] == val
+            else:
+                return pd.Series(False, index=df.index)
 
         if isinstance(cols, list):
             assert isinstance(vals, list) and len(vals) == len(
@@ -247,6 +283,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                             )
                         ],
                         remainder="passthrough",
+                        n_jobs=int(joblib.cpu_count() * 0.5)  # use half of the cpus
+                        if self.impute_method == "knn"
+                        else None,
                     ),
                 ),
                 # zero out everything else
@@ -382,6 +421,42 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             "test": (X_eval.loc[test_ids], y_eval[test_ids]),
         }
 
+    def dump_data_params(self, serialized_data_dir: str = None):
+        """Log to MLFlow or local."""
+
+        if serialized_data_dir is None:
+            # manually get path from uri
+            data_path = mlflow.get_artifact_uri().split("file://")[1]
+            data_dir = join(data_path, "static_data")
+        else:
+            data_dir = serialized_data_dir
+        makedirs(data_dir, exist_ok=True)
+
+        with open(join(data_dir, SPLIT_IDS_FNAME), "wb") as f:
+            pickle.dump(self.split_pt_ids, f)
+        with open(
+            join(data_dir, COLUMNS_FNAME), "wb"
+        ) as f:  # dump  all columns to align
+            pickle.dump(self.columns, f)
+        with open(join(data_dir, DATA_TRANSFORM_FNAME), "wb") as f:
+            # Ref: https://github.com/scikit-learn/scikit-learn/issues/17390
+            cloudpickle.dump(self.data_transform, f)
+
+    def load_data_params(self, serialized_data_dir: str) -> Tuple[str, str, str]:
+        """Loads model regardless if saved locally or in mlflow."""
+
+        with open(join(serialized_data_dir, SPLIT_IDS_FNAME), "rb") as f:
+            reference_ids = pickle.load(f)
+            reference_ids = {
+                split: pd.Index(split_ids) for split, split_ids in reference_ids.items()
+            }  # enforce Index
+        with open(join(serialized_data_dir, COLUMNS_FNAME), "rb") as f:
+            original_columns = pickle.load(f)
+        with open(join(serialized_data_dir, DATA_TRANSFORM_FNAME), "rb") as f:
+            data_transform = cloudpickle.load(f)
+
+        return reference_ids, original_columns, data_transform
+
     @staticmethod
     # def add_data_args(parent_parsers: List[ArgumentParser]) -> ArgumentParser:
     def add_data_args(p: ArgumentParser) -> ArgumentParser:
@@ -410,7 +485,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             help="Name of outcome column in outcomes table or preprocessed df.",
         )
         p.add_argument(
-            "--corr_thresh",
+            "--corr-thresh",
             type=float,
             default=None,
             help="Name of outcome column in outcomes table or preprocessed df.",
@@ -446,4 +521,11 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             ],
             help="Name of cohort/dataset to use for evaluation.",
         )
+        p.add_argument(
+            "--preselect-features",
+            type=bool,
+            default=False,
+            help="If true, only use features from the intersection of all cohorts",
+        )
+
         return p

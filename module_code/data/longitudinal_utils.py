@@ -245,7 +245,8 @@ def aggregate_cat_feature(
         # Ref: https://stackoverflow.com/a/32012129/1888794
         group_by.append(Grouper(key=UNIVERSAL_TIME_COL_NAME, freq=time_interval))
 
-    return cat_feature.groupby(group_by).sum()
+    # numeric_only=True prevents summing over time_col (can't sum datetime)
+    return cat_feature.groupby(group_by).sum(numeric_only=True)
 
 
 def aggregate_ctn_feature(

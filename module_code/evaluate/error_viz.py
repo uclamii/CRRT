@@ -94,7 +94,7 @@ def error_visualization(
         ax.set_xlabel("Patient Counts")
         plt.show()
         log_figure(
-            fig, join("img_artifacts", "error_viz", f"{prefix}_tree_summary.svg")
+            fig, join("img_artifacts", "error_viz", f"{prefix}_tree_summary")
         )
 
         # TODO: tie this to feature importance top-k-features? (use same k)
@@ -105,7 +105,6 @@ def error_visualization(
         log_figure(
             plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists")
         )
-
     except RuntimeError:
         # all predictions are correct no error analysis, skip
         pass
