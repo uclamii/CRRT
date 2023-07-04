@@ -73,7 +73,7 @@ def static_learning(args: Namespace):
         if (
             not args.tune_n_trials and args.slide_window_by == 0
         ) or args.slide_window_by:  # Override with already trained model
-            model = model.load_model(MODEL_DIR)
+            model.load_model(MODEL_DIR)
         else:  # executed at the end of tuning/one-off and if slide_window_by is not 0/None
             # load weights and hparams
             model.load_model(args.best_model_path)
