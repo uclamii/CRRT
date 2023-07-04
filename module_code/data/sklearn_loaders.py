@@ -8,6 +8,7 @@ from os import makedirs
 import mlflow
 import pickle
 import cloudpickle
+import joblib
 
 # from sktime.transformations.series.impute import Imputer
 # explicitly require this experimental feature
@@ -282,6 +283,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                             )
                         ],
                         remainder="passthrough",
+                        n_jobs=int(joblib.cpu_count() * 0.5)  # use half of the cpus
+                        if self.impute_method == "knn"
+                        else None,
                     ),
                 ),
                 # zero out everything else

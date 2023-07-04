@@ -93,7 +93,7 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials):
                 for k, v in GRID_HP_MAP.get(modeln, {}).items()
             },
             "impute_method": trials.suggest_categorical(
-                "imputation", ["simple"]  # , "knn"]
+                "imputation", ["simple", "knn"]
             ),
         }
 
