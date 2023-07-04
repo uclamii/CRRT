@@ -70,7 +70,7 @@ def eval_metric(
 ) -> float:
     labels_are_homog = len(labels.value_counts()) == 1
 
-    if labels[0] == 1:
+    if labels.value_counts().index[0] == 1:
         metrics_ok_homog = {"accuracy", "precision", "recall", "TP", "FN"}
     else:
         metrics_ok_homog = {"accuracy", "specificity", "TN", "FP"}
