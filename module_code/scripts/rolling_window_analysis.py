@@ -144,8 +144,8 @@ if __name__ == "__main__":
     # slide after and slide before
     for range in [range(1, num_days_to_slide_fwd), range(num_days_to_slide_bwd, 0)]:
         for i in range:
-            args = deepcopy(orig_args)  # original args overwrite optimal ones
-            dargs = vars(args)
+            slide_args = deepcopy(args)  # original args overwrite optimal ones
+            dargs = vars(slide_args)
             dargs.update({"slide_window_by": i})
             if not retrain:  # just evaluate and make sure not to tune
                 dargs.update(
@@ -156,7 +156,7 @@ if __name__ == "__main__":
                         "max_days_on_crrt": max_days_on_crrt,
                     }
                 )
-            main(args)
+            main(slide_args)
 
 
 # shell script example
