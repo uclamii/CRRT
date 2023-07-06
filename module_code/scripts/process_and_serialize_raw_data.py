@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from os.path import join
+from os.path import join, isfile
 from os import getcwd
 import sys
 
@@ -35,16 +35,28 @@ def main():
     if args.str_pre_start_delta is not None:
         args.pre_start_delta = time_delta_str_to_dict(args.str_pre_start_delta)
 
-    process_and_serialize_raw_data(
-        args, get_preprocessed_df_path(args, args.cohort), args.cohort
-    )
+    preprocessed_df_path = get_preprocessed_df_path(args, args.cohort)
+    if isfile(preprocessed_df_path):
+        print(
+            f"Processed data already exists at {preprocessed_df_path}! Skipping processing for now (could implement override in future)"
+        )
+    else:
+        process_and_serialize_raw_data(args, preprocessed_df_path, args.cohort)
 
     # Also do static data.
     cohort_data_dir = getattr(args, f"{args.cohort}_data_dir")
-    path = join(cohort_data_dir, f"static_data.{args.serialization}")
-    static_features = load_static_features(cohort_data_dir).set_index("IP_PATIENT_ID")
-    serialize_fn = getattr(static_features, f"to_{args.serialization}")
-    serialize_fn(path)
+    static_path = join(cohort_data_dir, f"static_data.{args.serialization}")
+
+    if isfile(static_path):
+        print(
+            f"Static data already exists at {static_path}! Skipping processing now (could implement override in future)"
+        )
+    else:
+        static_features = load_static_features(cohort_data_dir).set_index(
+            "IP_PATIENT_ID"
+        )
+        serialize_fn = getattr(static_features, f"to_{args.serialization}")
+        serialize_fn(static_path)
 
 
 if __name__ == "__main__":

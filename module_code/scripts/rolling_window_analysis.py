@@ -80,7 +80,7 @@ async def async_process_data(args, total_slides):
         commands.append(
             command
             + ["--slide-window-by", f"{i}"]
-            + ["--cohort", f"{dargs['eval_cohort']}"]  # create the eval_cohort parquets
+            + ["--cohort", f"{args.eval_cohort}"]  # create the eval_cohort parquets
         )
 
     await asyncio.gather(*[run_command(*cmd) for cmd in commands])
@@ -102,7 +102,6 @@ if __name__ == "__main__":
             "max_days_on_crrt": max_days_on_crrt,
         }
     )
-    print(args)
     main(args)
 
     # Evaluate if not tuning
@@ -118,7 +117,7 @@ if __name__ == "__main__":
         main(args)
 
     # TODO: assert that args contain best eval args when evaluating
-    print(args)
+
     # this should be updated from tuning internally, or just set properly
     # PP Note: when tuning is set 1, pre_Start delta is set to the best model value
     # this means the algorithm does not run for 7 days in the future. it just runs for one or non if range(1,1)
@@ -127,18 +126,14 @@ if __name__ == "__main__":
     num_days_to_slide_bwd = -3
 
     if args.tune_n_trials:
-        # TODO: check if exists first
         total_slides = list(range(0, num_days_to_slide_fwd)) + list(
             range(num_days_to_slide_bwd, 0)
         )
 
         loop = asyncio.get_event_loop()
         loop.run_until_complete(async_process_data(args, total_slides))
-        loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
 
-    print(args)
-    exit()
     # don't include the last day becaues potentially people with exactly N days of data will not have that much data / not be many
     # Patients with fewer days won't even appear anymore after sliding so far.
     # slide after and slide before
