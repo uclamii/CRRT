@@ -26,19 +26,14 @@ def main():
     p.add_argument(
         "--str-pre-start-delta",
         type=str,
+        default=None,
         help="Convenient string version of pre-start-delta. Will be converted to dict",
     )
-    p.add_argument(
-        "--reverse",
-        action="store_true",
-        help="If true, reverses the direction of the rolling window",
-    )
+
     args = init_cli_args(p)
 
-    args.pre_start_delta = time_delta_str_to_dict(args.str_pre_start_delta)
-
-    if args.reverse:
-        args.slide_window_by = args.slide_window_by * -1
+    if args.str_pre_start_delta is not None:
+        args.pre_start_delta = time_delta_str_to_dict(args.str_pre_start_delta)
 
     process_and_serialize_raw_data(
         args, get_preprocessed_df_path(args, args.cohort), args.cohort
@@ -79,13 +74,21 @@ if __name__ == "__main__":
     Example of rolling back instead of forwards:
     Option 1: all cohorts at once
     ```
-    for j in {cedars_crrt,ucla_crrt,ucla_control}; do for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py  --reverse --cohort ${j} --slide-window-by ${i} --str-pre-start-delta 1d & done; done; wait;
+    for j in {cedars_crrt,ucla_crrt,ucla_control}; do for i in {-1,-2,-3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort ${j} --slide-window-by ${i} --str-pre-start-delta 1d & done; done; wait;
+
+    for j in {cedars_crrt,ucla_crrt}; do for i in {1..7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ${j} --slide-window-by ${i} --str-pre-start-delta 7d & done; done; wait;
+
+    for i in {-1,-2,-3,1,2,3,4,5,6,7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort cedars_crrt --slide-window-by ${i} --str-pre-start-delta 6d & done; wait;
+
+    for i in {-1,-2,-3,1,2,3,4,5,6,7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_crrt --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
+
+
     ```
     Option 2: Cohorts one-by-one
     ```
-    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py  --invert --cohort cedars_crrt --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
-    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py  --invert --cohort ucla_crrt --slide-window-by ${i}  --str-pre-start-delta 1d & done; wait;
-    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py  --invert --cohort ucla_control --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
+    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort cedars_crrt --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
+    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort ucla_crrt --slide-window-by ${i}  --str-pre-start-delta 1d & done; wait;
+    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort ucla_control --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
     ```
 
     """
