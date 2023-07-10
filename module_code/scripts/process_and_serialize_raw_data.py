@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from os.path import join
+from os.path import join, isfile
 from os import getcwd
 import sys
 
@@ -26,30 +26,37 @@ def main():
     p.add_argument(
         "--str-pre-start-delta",
         type=str,
+        default=None,
         help="Convenient string version of pre-start-delta. Will be converted to dict",
     )
-    p.add_argument(
-        "--reverse",
-        action="store_true",
-        help="If true, reverses the direction of the rolling window",
-    )
+
     args = init_cli_args(p)
 
-    args.pre_start_delta = time_delta_str_to_dict(args.str_pre_start_delta)
+    if args.str_pre_start_delta is not None:
+        args.pre_start_delta = time_delta_str_to_dict(args.str_pre_start_delta)
 
-    if args.reverse:
-        args.slide_window_by = args.slide_window_by * -1
-
-    process_and_serialize_raw_data(
-        args, get_preprocessed_df_path(args, args.cohort), args.cohort
-    )
+    preprocessed_df_path = get_preprocessed_df_path(args, args.cohort)
+    if isfile(preprocessed_df_path):
+        print(
+            f"Processed data already exists at {preprocessed_df_path}! Skipping processing for now (could implement override in future)"
+        )
+    else:
+        process_and_serialize_raw_data(args, preprocessed_df_path, args.cohort)
 
     # Also do static data.
     cohort_data_dir = getattr(args, f"{args.cohort}_data_dir")
-    path = join(cohort_data_dir, f"static_data.{args.serialization}")
-    static_features = load_static_features(cohort_data_dir).set_index("IP_PATIENT_ID")
-    serialize_fn = getattr(static_features, f"to_{args.serialization}")
-    serialize_fn(path)
+    static_path = join(cohort_data_dir, f"static_data.{args.serialization}")
+
+    if isfile(static_path):
+        print(
+            f"Static data already exists at {static_path}! Skipping processing now (could implement override in future)"
+        )
+    else:
+        static_features = load_static_features(cohort_data_dir).set_index(
+            "IP_PATIENT_ID"
+        )
+        serialize_fn = getattr(static_features, f"to_{args.serialization}")
+        serialize_fn(static_path)
 
 
 if __name__ == "__main__":
@@ -79,13 +86,21 @@ if __name__ == "__main__":
     Example of rolling back instead of forwards:
     Option 1: all cohorts at once
     ```
-    for j in {cedars_crrt,ucla_crrt,ucla_control}; do for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py  --reverse --cohort ${j} --slide-window-by ${i} --str-pre-start-delta 1d & done; done; wait;
+    for j in {cedars_crrt,ucla_crrt,ucla_control}; do for i in {-1,-2,-3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort ${j} --slide-window-by ${i} --str-pre-start-delta 1d & done; done; wait;
+
+    for j in {cedars_crrt,ucla_crrt}; do for i in {1..7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ${j} --slide-window-by ${i} --str-pre-start-delta 7d & done; done; wait;
+
+    for i in {-1,-2,-3,1,2,3,4,5,6,7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort cedars_crrt --slide-window-by ${i} --str-pre-start-delta 6d & done; wait;
+
+    for i in {-1,-2,-3,1,2,3,4,5,6,7}; do python module_code/scripts/process_and_serialize_raw_data.py  --cohort ucla_crrt --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
+
+
     ```
     Option 2: Cohorts one-by-one
     ```
-    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py  --invert --cohort cedars_crrt --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
-    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py  --invert --cohort ucla_crrt --slide-window-by ${i}  --str-pre-start-delta 1d & done; wait;
-    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py  --invert --cohort ucla_control --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
+    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort cedars_crrt --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
+    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort ucla_crrt --slide-window-by ${i}  --str-pre-start-delta 1d & done; wait;
+    for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort ucla_control --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
     ```
 
     """
