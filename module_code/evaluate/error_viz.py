@@ -71,7 +71,8 @@ def error_visualization(
         )
 
         # Create stacked barchart
-        fig, ax = plt.subplots()
+        plt.clf()
+        _, ax = plt.subplots()
         left = np.zeros(len(nodes_to_leaf))
         ax.barh(
             nodes_to_leaf[::-1],
@@ -92,11 +93,11 @@ def error_visualization(
         )
         ax.legend()
         ax.set_xlabel("Patient Counts")
-        plt.show()
         log_figure(
-            fig, join("img_artifacts", "error_viz", f"{prefix}_tree_summary")
+            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_tree_summary")
         )
 
+        plt.clf()
         # TODO: tie this to feature importance top-k-features? (use same k)
         error_viz.plot_feature_distributions_on_leaves(
             leaf_selector=leaf_id, top_k_features=5
@@ -117,7 +118,6 @@ def error_visualization(
 
 
 def get_error_node_summary(error_analyzer, leaf_id):
-
     n_errors = int(
         error_analyzer.error_tree.estimator_.tree_.value[
             leaf_id, 0, error_analyzer.error_tree.error_class_idx
@@ -142,7 +142,6 @@ def get_error_node_summary(error_analyzer, leaf_id):
 
 
 def get_leaf_summary(error_analyzer, leaf_id):
-
     leaf_nodes = error_analyzer._get_ranked_leaf_ids(leaf_selector=leaf_id)
 
     leaves_summary = []
@@ -183,7 +182,6 @@ def get_path_to_node(error_analyzer, node_id):
     cur_node_id = node_id
     path_to_node = collections.deque()
     while cur_node_id > 0:
-
         node_is_left_child = cur_node_id in children_left
         if node_is_left_child:
             parent_id = children_left.index(cur_node_id)

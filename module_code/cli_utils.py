@@ -129,6 +129,12 @@ def add_global_args(
         help="If rolling-evaluation is True, this flag specifies which run is the window for training",
     )
     time_p.add_argument(
+        "--new-eval-cohort",
+        default=False,
+        type=bool,
+        help="Flag for specifying if evaluating on a new cohort",
+    )
+    time_p.add_argument(
         "--slide-window-by",
         type=int,
         default=None,

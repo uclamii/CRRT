@@ -36,7 +36,7 @@ class TestEvalModel(unittest.TestCase):
             "max_days_on_crrt": 0,
             "time_interval": None,
             "preprocessed_df_file": None,
-            "preselect_features": False,
+            "preselect_features": [],
         }
         self.data = SklearnCRRTDataModule(
             SEED,

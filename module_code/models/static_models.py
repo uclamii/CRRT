@@ -53,7 +53,7 @@ from evaluate.utils import (
     confidence_interval,
 )
 
-LOCAL_MODEL_DIR = join("local_data", "static_model")
+LOCAL_MODEL_DIR = "local_data"
 STATIC_MODEL_FNAME = "static_model.pkl"
 STATIC_HPARAM_FNAME = "static_hparams.yml"
 
@@ -341,7 +341,14 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
     Implements fit and transform.
     """
 
-    def __init__(self, seed: int, static_model: StaticModel = None, **kwargs):
+    def __init__(
+        self,
+        seed: int,
+        run_name: str = None,
+        static_model: StaticModel = None,
+        **kwargs,
+    ):
+        self.run_name = run_name
         self.seed = seed
         if static_model is not None:
             self.static_model = static_model
@@ -492,10 +499,10 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
         metrics = None
 
         # log predict probabilities
-        dump_array(prefix, "predict_probas", pred_probas)
+        dump_array(prefix, join(self.run_name, "predict_probas"), pred_probas)
         # log labels for convenient post-hoc analysis if required
         if stage == "test":
-            dump_array(prefix, "labels", labels)
+            dump_array(prefix, join(self.run_name, "labels"), labels)
 
         pred_probas = pred_probas.values
 
@@ -526,7 +533,11 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                         metrics[f"{name}_CI_low"] = low
                         metrics[f"{name}_CI_high"] = high
 
-                        dump_array(name, "bootstrapped", bootstrapped_metrics)
+                        dump_array(
+                            name,
+                            join(self.run_name, "bootstrapped"),
+                            bootstrapped_metrics,
+                        )
                     else:  # just eval no bootstrapping
                         metrics[name] = eval_metric(
                             labels,

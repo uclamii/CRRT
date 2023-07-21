@@ -5,7 +5,7 @@ from mlflow.tracking import MlflowClient
 from mlflow.entities import Run
 from optuna import Study, create_study
 from optuna.trial import FrozenTrial
-from optuna.samplers import TPESampler
+from optuna.samplers import TPESampler, RandomSampler
 
 from exp.cv import run_cv
 from exp.static_learning import static_learning
@@ -46,6 +46,18 @@ def run_experiment(args: Namespace, trials=None):
             run_name += f" // eval best"
         elif args.tune_n_trials:  # Just tuning
             run_name += f" // tune trial: {trials.number}"
+        elif args.new_eval_cohort and args.rolling_evaluation:
+            if args.reference_window:
+                if args.min_days_on_crrt > 0:
+                    run_name += (
+                        f" // post_eval_{args.eval_cohort}_{args.min_days_on_crrt} best"
+                    )
+                else:
+                    run_name += f" // post_eval_{args.eval_cohort} best"
+            else:
+                run_name += f" // post_eval_{args.eval_cohort} rolling window: {args.slide_window_by}"
+        elif args.rolling_evaluation and args.stage == "eval":
+            run_name += f" // rolling window: {args.slide_window_by}"
 
         with mlflow.start_run(run_name=run_name):
             # Log all cli args as tags
@@ -128,7 +140,7 @@ def main(args):
         study = create_study(
             study_name=args.experiment,
             direction=args.tune_direction,
-            sampler=TPESampler(seed=args.seed),
+            sampler=RandomSampler(seed=args.seed),
         )
         for modeln in ALG_MAP.keys():
             # for modeln in ["lgr"]:

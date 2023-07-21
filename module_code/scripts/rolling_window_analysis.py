@@ -100,6 +100,7 @@ if __name__ == "__main__":
             "rolling_evaluation": True,
             "slide_window_by": 0,
             "max_days_on_crrt": max_days_on_crrt,
+            "plot_names": [],  # ["shap_explain", "randomness", "error_viz"],
         }
     )
     main(args)
@@ -115,8 +116,6 @@ if __name__ == "__main__":
             }
         )
         main(args)
-
-    # TODO: assert that args contain best eval args when evaluating
 
     # this should be updated from tuning internally, or just set properly
     # PP Note: when tuning is set 1, pre_Start delta is set to the best model value
@@ -137,8 +136,8 @@ if __name__ == "__main__":
     # don't include the last day becaues potentially people with exactly N days of data will not have that much data / not be many
     # Patients with fewer days won't even appear anymore after sliding so far.
     # slide after and slide before
-    for range in [range(1, num_days_to_slide_fwd), range(num_days_to_slide_bwd, 0)]:
-        for i in range:
+    for range_ in [range(1, num_days_to_slide_fwd), range(num_days_to_slide_bwd, 0)]:
+        for i in range_:
             slide_args = deepcopy(args)  # original args overwrite optimal ones
             dargs = vars(slide_args)
             dargs.update({"slide_window_by": i})
@@ -149,9 +148,71 @@ if __name__ == "__main__":
                         "rolling_evaluation": True,
                         "tune_n_trials": 0,
                         "max_days_on_crrt": max_days_on_crrt,
+                        "plot_names": [],
                     }
                 )
             main(slide_args)
+
+    # TODO: can refactor/functionalize the below and above
+    if len(args.preselect_features) > 0 or len(args.additional_eval_cohorts) > 0:
+        if len(args.preselect_features) > 0:
+            new_eval_cohorts = args.preselect_features
+            original_eval_cohorts = args.eval_cohort.split("+")
+            new_eval_cohorts = list(
+                set(new_eval_cohorts).difference(set(original_eval_cohorts))
+            )
+        else:
+            new_eval_cohorts = args.additional_eval_cohorts
+
+        for cohort in new_eval_cohorts:
+            new_eval_args = deepcopy(args)
+            dargs = vars(new_eval_args)
+            dargs.update(
+                {
+                    "slide_window_by": 0,
+                    "rolling_evaluation": True,
+                    "reference_window": True,  # resaves reference_id for new eval cohort
+                    "tune_n_trials": 0,
+                    "stage": "eval",
+                    "eval_cohort": cohort,
+                    "new_eval_cohort": True,
+                    "max_days_on_crrt": max_days_on_crrt,
+                    "plot_names": [],  # ["shap_explain", "randomness", "error_viz"],
+                }
+            )
+
+            total_slides = list(range(0, num_days_to_slide_fwd)) + list(
+                range(num_days_to_slide_bwd, 0)
+            )
+
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(async_process_data(new_eval_args, total_slides))
+            loop.close()
+
+            main(new_eval_args)
+
+            for range_ in [
+                range(1, num_days_to_slide_fwd),
+                range(num_days_to_slide_bwd, 0),
+            ]:
+                for i in range_:
+                    slide_args = deepcopy(args)  # original args overwrite optimal ones
+                    dargs = vars(slide_args)
+                    dargs.update({"slide_window_by": i})
+                    if not retrain:  # just evaluate and make sure not to tune
+                        dargs.update(
+                            {
+                                "rolling_evaluation": True,
+                                "reference_window": False,  # load from local use reference ids
+                                "tune_n_trials": 0,
+                                "stage": "eval",
+                                "eval_cohort": cohort,
+                                "new_eval_cohort": True,
+                                "max_days_on_crrt": max_days_on_crrt,
+                                "plot_names": [],
+                            }
+                        )
+                    main(slide_args)
 
 
 # shell script example

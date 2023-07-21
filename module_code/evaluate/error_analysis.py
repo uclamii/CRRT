@@ -39,6 +39,9 @@ def test_reject(p: float, confidence_level: float = 0.95) -> bool:
     p > alpha: a and b come from the same distribution (fail to reject H0)
         else: a and b come from different distributions (reject H0)
     """
+    if p is None:
+        return 0  # not significant
+
     return p <= (1 - confidence_level)
 
 

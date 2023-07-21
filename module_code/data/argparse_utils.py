@@ -8,7 +8,14 @@ def string_list_to_list(
     list_string: str, choices: Optional[List[str]] = None, convert: type = str
 ) -> List:
     # strip any {<space>, ', " [, ]}" and then split by comma
-    values = re.sub(r"[ '\"\[\]]", "", list_string).split(",")
+    values = re.sub(r"[ '\"\[\]]", "", list_string)
+
+    # empty list
+    if len(values) < 1:
+        return []
+
+    values = values.split(",")
+
     if choices:
         values = [convert(x) for x in values if x in choices]
     else:

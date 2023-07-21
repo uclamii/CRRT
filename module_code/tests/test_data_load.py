@@ -37,7 +37,7 @@ class TestSklearnLoaders(unittest.TestCase):
             max_days_on_crrt=0,
             time_interval=None,
             preprocessed_df_file=None,
-            preselect_features=False,
+            preselect_features=[],
         )
 
     def multiindex_from_indices(self, indices: List[int]) -> pd.MultiIndex:

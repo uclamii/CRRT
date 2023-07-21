@@ -6,6 +6,7 @@ from sklearn.base import ClassifierMixin
 import matplotlib.pyplot as plt
 import lime
 import shap
+from sklearn.linear_model import LogisticRegression
 
 from evaluate.utils import log_figure, filter_fns
 
@@ -21,13 +22,26 @@ def shap_explainability(
     seed: int,
     top_k: Optional[int] = None,
 ):
-    explainer = shap.Explainer(
-        model,
-        feature_names=columns.to_list(),
-        output_names=["Do not Recommend", "Recommend"],
-        categorical_columns=[columns.get_loc(col) for col in categorical_columns],
-        seed=seed,
-    )
+    if not isinstance(model, LogisticRegression):
+        explainer = shap.Explainer(
+            model,
+            feature_names=columns.to_list(),
+            output_names=["Do not Recommend", "Recommend"],
+            categorical_columns=[columns.get_loc(col) for col in categorical_columns],
+            seed=seed,
+        )
+    else:
+        # Logistic regression has an error with not being callable. Use LinearExplainer with a masker
+        # Also need to remove output_names column
+        masker = shap.maskers.Independent(data=data)
+        explainer = shap.LinearExplainer(
+            model,
+            masker=masker,
+            feature_names=columns.to_list(),
+            categorical_columns=[columns.get_loc(col) for col in categorical_columns],
+            seed=seed,
+        )
+
     shap_values: shap.Explanation = explainer(data)
     for sample_type in ["tp", "tn", "fp", "fn"]:
         # explain 1 (just randomly pick first) sample from tp and tn

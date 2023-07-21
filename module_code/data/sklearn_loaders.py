@@ -25,6 +25,7 @@ from data.longitudinal_features import CATEGORICAL_COL_REGEX
 from data.base_loaders import AbstractCRRTDataModule, DataLabelTuple
 from data.utils import Preselected, SelectThreshold, f_pearsonr
 from data.load import load_data
+from data.argparse_utils import YAMLStringListToList
 
 ADDITIONAL_CATEGORICAL_COLS = [
     "SEX",
@@ -35,7 +36,7 @@ ADDITIONAL_CATEGORICAL_COLS = [
     "infection_pt_indicator",
 ]
 
-LOCAL_DATA_DIR = join("local_data", "static_data")
+LOCAL_DATA_DIR = "local_data"
 SPLIT_IDS_FNAME = "split_ids.pkl"
 COLUMNS_FNAME = "columns.pkl"
 DATA_TRANSFORM_FNAME = "data_transform.pkl"
@@ -90,7 +91,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         """
         Ops performed across GPUs. e.g. splits, transforms, etc.
         """
-        if args.preselect_features and reference_cols is None:
+        if len(args.preselect_features) > 0 and reference_cols is None:
             reference_cols = self.preload_data_for_featselect(args)
 
         X, y = self.load_data_and_additional_preproc(
@@ -101,7 +102,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # y = y.groupby("IP_PATIENT_ID").last()
 
         # Load other dataset if applicable and align columns
-        if self.train_val_cohort != self.eval_cohort:
+        if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
             X_eval, y_eval = self.load_data_and_additional_preproc(
                 args, self.eval_cohort, reference_cols
             )
@@ -132,7 +133,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.ctn_columns = X.columns.difference(self.categorical_columns)
 
         split_args = [X, y, reference_ids]
-        if self.train_val_cohort != self.eval_cohort:
+        if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
             split_args += [X_eval, y_eval]
         X_y_tuples = self.split_dataset(*split_args)
         split_names = list(X_y_tuples.keys())
@@ -163,7 +164,10 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             setattr(self, split, (self.data_transform(X), y))
 
     def preload_data_for_featselect(self, args: Namespace):
-        cohorts = ["ucla_crrt", "cedars_crrt", "ucla_control"]
+        # Should be at least 2
+        assert len(args.preselect_features) > 1
+
+        cohorts = args.preselect_features
         X_all_cohorts = []
         for single_cohort in cohorts:
             X, _ = self.load_data_and_additional_preproc(args, single_cohort)
@@ -218,6 +222,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             preprocessed_df[self.outcome_col_name],
         )
 
+        # convert boolean to uint8
+        for col in X.dtypes[X.dtypes.values == bool].index:
+            X[col] = X[col].astype("u1")
         # remove unwanted columns, esp non-numeric ones, before pad and pack
         X = X.select_dtypes(["number"])
 
@@ -283,7 +290,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                             )
                         ],
                         remainder="passthrough",
-                        n_jobs=int(joblib.cpu_count() * 0.5)  # use half of the cpus
+                        n_jobs=min(
+                            8, int(joblib.cpu_count(only_physical_cores=True))
+                        )  # use half of the cpus
                         if self.impute_method == "knn"
                         else None,
                     ),
@@ -503,9 +512,10 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             choices=[
                 "ucla_crrt",
                 "ucla_control",
-                "ucla_crrt+control",
+                "ucla_crrt+ucla_control",
                 "cedars_crrt",
                 "ucla_crrt+cedars_crrt",
+                "ucla_crrt+cedars_crrt+ucla_control",
             ],
             help="Name of cohort/dataset to use for training and validation.",
         )
@@ -515,17 +525,28 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             choices=[
                 "ucla_crrt",
                 "ucla_control",
-                "ucla_crrt+control",
+                "ucla_crrt+ucla_control",
                 "cedars_crrt",
                 "ucla_crrt+cedars_crrt",
+                "ucla_crrt+cedars_crrt+ucla_control",
             ],
             help="Name of cohort/dataset to use for evaluation.",
         )
         p.add_argument(
             "--preselect-features",
-            type=bool,
-            default=False,
-            help="If true, only use features from the intersection of all cohorts",
+            dest="preselect_features",
+            type=str,
+            default=[],
+            action=YAMLStringListToList(str),
+            help="Use features from the intersection of cohorts",
+        )
+        p.add_argument(
+            "--additional-eval-cohorts",
+            dest="additional_eval_cohorts",
+            type=str,
+            default=[],
+            action=YAMLStringListToList(str),
+            help="Additional cohorts for evaluation",
         )
 
         return p

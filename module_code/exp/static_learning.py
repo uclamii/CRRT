@@ -21,7 +21,7 @@ def load_saved_data(
             reference_ids,
             original_columns,
             data_transform,
-        ) = data.load_data_params(LOCAL_DATA_DIR)
+        ) = data.load_data_params(join(LOCAL_DATA_DIR, args.run_name, "static_data"))
     # Requires a best_model_path
     else:
         (
@@ -29,6 +29,9 @@ def load_saved_data(
             original_columns,
             data_transform,
         ) = data.load_data_params(join(args.best_model_path, "static_data"))
+
+    if args.new_eval_cohort and args.reference_window:
+        reference_ids = None
 
     data.setup(
         args,
@@ -44,7 +47,7 @@ def load_saved_model(
 ) -> CRRTStaticPredictor:
     # Load from local directory
     if load_local:
-        model.load_model(LOCAL_MODEL_DIR)
+        model.load_model(join(LOCAL_MODEL_DIR, args.run_name, "static_model"))
     # Requires a best_model_path
     else:
         model.load_model(join(args.best_model_path, "static_model"))
@@ -79,7 +82,6 @@ def static_learning(args: Namespace):
 
     if args.stage == "eval":
         # Load up trained portion and hparams - args.best_model_path required if reference_window is True
-
         # If running all experiments together (train and then immediately eval), then should never have to set reference_window since this is done automatically
         # Cases
         # 1. Tuning & rolling
@@ -98,8 +100,8 @@ def static_learning(args: Namespace):
         # but useful if wanting to evaluate on any arbitrary experiment.
         #   If wanting to perform post-hoc rolling window evaluation on a previous training run, then should set reference_window on the first evaluation
         if args.rolling_evaluation and args.reference_window:
-            model.save_model(LOCAL_MODEL_DIR)
-            data.dump_data_params(LOCAL_DATA_DIR)
+            model.save_model(join(LOCAL_MODEL_DIR, args.run_name, "static_model"))
+            data.dump_data_params(join(LOCAL_DATA_DIR, args.run_name, "static_data"))
 
         return model.evaluate(data, "test")
     else:  # Training / tuning
@@ -110,8 +112,8 @@ def static_learning(args: Namespace):
         # Some redundancy here for saving models
         # For tuning, mlflow is basically always on so log the model
         if mlflow.active_run() is None:
-            model.save_model(LOCAL_MODEL_DIR)
-            data.dump_data_params(LOCAL_DATA_DIR)
+            model.save_model(join(LOCAL_MODEL_DIR, args.run_name, "static_model"))
+            data.dump_data_params(join(LOCAL_DATA_DIR, args.run_name, "static_data"))
         else:
             model.log_model()
             data.dump_data_params()
@@ -120,8 +122,10 @@ def static_learning(args: Namespace):
         # functionally slide_window_by = 0 == None, but 0 indicates there will be sliding in the future
         if args.rolling_evaluation:
             if not args.tune_n_trials:
-                model.save_model(LOCAL_MODEL_DIR)
-                data.dump_data_params(LOCAL_DATA_DIR)
+                model.save_model(join(LOCAL_MODEL_DIR, args.run_name, "static_model"))
+                data.dump_data_params(
+                    join(LOCAL_DATA_DIR, args.run_name, "static_data")
+                )
 
         # informs tuning, different from testing/eval
         return model.evaluate(data, "val")
