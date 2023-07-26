@@ -27,6 +27,7 @@ def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
         "Comfort Care",
         "Expired ",
         "KNOWN_DECEASED",
+        "CRRT Year",
     ]
     # Ignore errors: it's ok if these don't exist (e.g. in ucla: control)
     df = df.drop(drop_columns, axis=1, errors="ignore")

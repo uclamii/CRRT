@@ -43,13 +43,17 @@ def shap_explainability(
         )
 
     shap_values: shap.Explanation = explainer(data)
-    for sample_type in ["tp", "tn", "fp", "fn"]:
+    label_dims = [1, 0, 1, 0]
+    for label_dim, sample_type in zip(label_dims, ["tp", "tn", "fp", "fn"]):
         # explain 1 (just randomly pick first) sample from tp and tn
         idxs = filter_fns[sample_type](preds, labels).nonzero()[0]
         if len(idxs) > 0:
             i = idxs[0]
             plt.clf()
-            figure = shap.plots.waterfall(shap_values[i], show=False)
+            if len(shap_values.shape) == 3:  # samples x features x output
+                figure = shap.plots.waterfall(shap_values[i][:, label_dim], show=False)
+            else:  # samples x features
+                figure = shap.plots.waterfall(shap_values[i], show=False)
             figure.suptitle(
                 f"{prefix}{sample_type} Decision Explanation (SHAP, iloc: {i})", y=1
             )
@@ -64,7 +68,10 @@ def shap_explainability(
 
     if top_k:
         plt.clf()
-        shap.plots.beeswarm(shap_values, show=False)
+        if len(shap_values.shape) == 3:
+            shap.plots.beeswarm(shap_values[:, :, 1], show=False)
+        else:
+            shap.plots.beeswarm(shap_values, show=False)
         figure = plt.gcf()
         figure.suptitle(f"{prefix} SHAP Feature Impact")
         # includes impact direction
@@ -74,7 +81,10 @@ def shap_explainability(
         )
 
         plt.clf()
-        shap.plots.bar(shap_values, show=False)
+        if len(shap_values.shape) == 3:
+            shap.plots.bar(shap_values[:, :, 1], show=False)
+        else:
+            shap.plots.bar(shap_values, show=False)
         figure = plt.gcf()
         figure.suptitle(f"{prefix} SHAP Absolute Feature Importance")
         # absolute value magnitude impact

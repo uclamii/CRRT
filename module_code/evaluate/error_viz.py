@@ -24,91 +24,83 @@ def error_visualization(
     if len(data) < 100:
         warn(f"Dataset {prefix} has less than 100 rows, cannot do error visualization.")
         return
-    try:
-        error_analyzer = ErrorAnalyzer(
-            model,
-            feature_names=columns,
-            random_state=seed,
-        )
-        error_analyzer.fit(data, labels)
-        error_analyzer.evaluate(data, labels, output_format="dict")
-        error_analyzer.get_error_leaf_summary(
-            leaf_selector=None, add_path_to_leaves=True
-        )
+    # try:
+    error_analyzer = ErrorAnalyzer(
+        model,
+        feature_names=columns,
+        random_state=seed,
+    )
+    error_analyzer.fit(data, labels)
+    error_analyzer.evaluate(data, labels, output_format="dict")
+    error_analyzer.get_error_leaf_summary(leaf_selector=None, add_path_to_leaves=True)
 
-        error_viz = ErrorVisualizer(error_analyzer)
-        # graphviz source to png so it can be logged
-        tree_src = error_viz.plot_error_tree()
-        tree_src.format = "png"
-        tree_src.render(join("img_artifacts", f"{prefix}_tree"))
-        path = join("img_artifacts", f"{prefix}_tree.png")
-        if active_run():
-            log_artifact(path, dirname(path))
+    error_viz = ErrorVisualizer(error_analyzer)
+    # graphviz source to png so it can be logged
+    tree_src = error_viz.plot_error_tree()
+    tree_src.format = "png"
+    tree_src.render(join("img_artifacts", f"{prefix}_tree"))
+    path = join("img_artifacts", f"{prefix}_tree.png")
+    if active_run():
+        log_artifact(path, dirname(path))
 
-        leaf_id = error_analyzer._get_ranked_leaf_ids()[0]
+    leaf_id = error_analyzer._get_ranked_leaf_ids()[0]
 
-        # Return summary of leaf, including ids of path
-        leaves_summary = get_leaf_summary(error_analyzer, leaf_id)
-        path = leaves_summary[0]["path_to_leaf"]
-        nodes_to_leaf = []
-        incorrect = []
-        correct = []
+    # Return summary of leaf, including ids of path
+    leaves_summary = get_leaf_summary(error_analyzer, leaf_id)
+    path = leaves_summary[0]["path_to_leaf"]
+    nodes_to_leaf = []
+    incorrect = []
+    correct = []
 
-        # This iterates through the path to the leaf, starting from root
-        for i in range(1, len(path)):
-            node = path[i]
-            node_id = int(node.split(" ")[0])
-            parent = get_error_node_summary(error_analyzer, node_id)
-            incorrect.append(parent["n_errors"])
-            correct.append(parent["n_corrects"])
-            nodes_to_leaf.append(" ".join(parent["path_to_leaf"][-1].split(" ")[1:]))
+    # This iterates through the path to the leaf, starting from root
+    for i in range(1, len(path)):
+        node = path[i]
+        node_id = int(node.split(" ")[0])
+        parent = get_error_node_summary(error_analyzer, node_id)
+        incorrect.append(parent["n_errors"])
+        correct.append(parent["n_corrects"])
+        nodes_to_leaf.append(" ".join(parent["path_to_leaf"][-1].split(" ")[1:]))
 
-        # Add the leaf
-        incorrect.append(leaves_summary[0]["n_errors"])
-        correct.append(leaves_summary[0]["n_corrects"])
-        nodes_to_leaf.append(
-            " ".join(leaves_summary[0]["path_to_leaf"][-1].split(" ")[1:])
-        )
+    # Add the leaf
+    incorrect.append(leaves_summary[0]["n_errors"])
+    correct.append(leaves_summary[0]["n_corrects"])
+    nodes_to_leaf.append(" ".join(leaves_summary[0]["path_to_leaf"][-1].split(" ")[1:]))
 
-        # Create stacked barchart
-        plt.clf()
-        _, ax = plt.subplots()
-        left = np.zeros(len(nodes_to_leaf))
-        ax.barh(
-            nodes_to_leaf[::-1],
-            incorrect[::-1],
-            0.5,
-            label="incorrect",
-            left=left,
-            color="#CE1228",
-        )
-        left += incorrect[::-1]
-        ax.barh(
-            nodes_to_leaf[::-1],
-            correct[::-1],
-            0.5,
-            label="correct",
-            left=left,
-            color="#DDDDDD",
-        )
-        ax.legend()
-        ax.set_xlabel("Patient Counts")
-        log_figure(
-            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_tree_summary")
-        )
+    # Create stacked barchart
+    plt.clf()
+    _, ax = plt.subplots()
+    left = np.zeros(len(nodes_to_leaf))
+    ax.barh(
+        nodes_to_leaf[::-1],
+        incorrect[::-1],
+        0.5,
+        label="incorrect",
+        left=left,
+        color="#CE1228",
+    )
+    left += incorrect[::-1]
+    ax.barh(
+        nodes_to_leaf[::-1],
+        correct[::-1],
+        0.5,
+        label="correct",
+        left=left,
+        color="#DDDDDD",
+    )
+    ax.legend()
+    ax.set_xlabel("Patient Counts")
+    log_figure(plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_tree_summary"))
 
-        plt.clf()
-        # TODO: tie this to feature importance top-k-features? (use same k)
-        error_viz.plot_feature_distributions_on_leaves(
-            leaf_selector=leaf_id, top_k_features=5
-        )
+    plt.clf()
+    # TODO: tie this to feature importance top-k-features? (use same k)
+    error_viz.plot_feature_distributions_on_leaves(
+        leaf_selector=leaf_id, top_k_features=5
+    )
 
-        log_figure(
-            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists")
-        )
-    except RuntimeError:
-        # all predictions are correct no error analysis, skip
-        pass
+    log_figure(plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists"))
+    # except RuntimeError:
+    #     # all predictions are correct no error analysis, skip
+    #     pass
 
 
 # Below is adapted from the original mealy with support for obtaining information along a path to a node

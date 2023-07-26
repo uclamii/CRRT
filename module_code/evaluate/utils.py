@@ -6,7 +6,7 @@ from scipy.stats import bootstrap
 from sklearn.utils import resample
 import pandas as pd
 import numpy as np
-from numpy import percentile
+from numpy import nanpercentile
 from numpy.random import default_rng
 import matplotlib.pyplot as plt
 
@@ -135,7 +135,7 @@ def confidence_interval(
     alpha = 1 - confidence_level
     lower = alpha / 2 * 100
     upper = (alpha / 2 + confidence_level) * 100
-    return (percentile(metrics, lower), percentile(metrics, upper))
+    return (nanpercentile(metrics, lower), nanpercentile(metrics, upper))
 
 
 # The below is not currently used because it significantly slows down the runtime

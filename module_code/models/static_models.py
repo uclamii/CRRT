@@ -528,7 +528,7 @@ class CRRTStaticPredictor(BaseSklearnPredictor):
                             ],
                         )
                         # report the mean as the point estimate
-                        metrics[name] = bootstrapped_metrics.mean()
+                        metrics[name] = np.nanmean(bootstrapped_metrics)
                         low, high = confidence_interval(bootstrapped_metrics)
                         metrics[f"{name}_CI_low"] = low
                         metrics[f"{name}_CI_high"] = high

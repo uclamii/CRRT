@@ -191,7 +191,8 @@ class Preselected(SelectorMixin, BaseEstimator):
 
 class SelectThreshold(_BaseFilter):
     """Select features according to a threshold of the highest scores.
-    Sklearn compatible: https://github.com/scikit-learn/scikit-learn/blob/37ac6788c/sklearn/feature_selection/_univariate_selection.py#L430"""
+    Sklearn compatible: https://github.com/scikit-learn/scikit-learn/blob/37ac6788c/sklearn/feature_selection/_univariate_selection.py#L430
+    """
 
     def __init__(self, score_func=f_classif, *, threshold=0):
         super().__init__(score_func=score_func)
@@ -242,7 +243,7 @@ def get_pt_type_indicators(df: DataFrame) -> DataFrame:
     ]
 
     for pt_type in types:
-        masks = []
+        masks = [0]  # in case there are no masks, then filter just becomes all zeros
         for code in pt_type["codes"]:
             for table_name in tables:
                 column_name = f"{table_name}_CCS_CODE_{code}"
