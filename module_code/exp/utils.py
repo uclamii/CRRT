@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 import regex
 
 # Grid of hyperparameters for each type of model
@@ -72,7 +72,7 @@ def time_delta_str_to_dict(delta_str: Optional[str]) -> Optional[Dict[str, int]]
     return None
 
 
-def get_optuna_grid(modeln: str, experiment_name: str, trials):
+def get_optuna_grid(modeln: str, experiment_name: str, trials) -> Dict[str, Any]:
     if experiment_name == "static_learning":
         feature_selection_method = trials.suggest_categorical(
             "feature_selection", ["kbest", "corr_thresh"]
