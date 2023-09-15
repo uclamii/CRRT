@@ -132,11 +132,18 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # set this here instead of init so that outcome col isn't included
         self.ctn_columns = X.columns.difference(self.categorical_columns)
 
-        split_args = [X, y, reference_ids]
-        if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
-            split_args += [X_eval, y_eval]
-        X_y_tuples = self.split_dataset(*split_args)
-        split_names = list(X_y_tuples.keys())
+        if args.new_eval_cohort and args.reference_window:
+            split_args = [X, y, reference_ids]
+            if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
+                split_args += [X_eval, y_eval]
+            X_y_tuples = self.split_dataset(*split_args, use_ref_test=False)
+            split_names = list(X_y_tuples.keys())
+        else:
+            split_args = [X, y, reference_ids]
+            if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
+                split_args += [X_eval, y_eval]
+            X_y_tuples = self.split_dataset(*split_args)
+            split_names = list(X_y_tuples.keys())
 
         # Apply filters for subpopulation analysis later
         # MUST OCCUR BEFORE TRANSFORM (before feature selection)
@@ -354,6 +361,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         reference_ids: Optional[Dict[str, pd.Index]] = None,
         X_eval: Optional[pd.DataFrame] = None,
         y_eval: Optional[Union[pd.Series, np.ndarray]] = None,
+        use_ref_test=True,
     ) -> Dict[str, DataLabelTuple]:
         """
         Splitting with stratification using sklearn.
@@ -388,7 +396,18 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             val_ids = reference_ids["val"].join(sample_ids["train_val"], how="inner")
             # test_ids will separately come from eval_cohort if it was different
             test_ids_key = "train_val" if not separate_eval_dataset else "eval"
-            test_ids = reference_ids["test"].join(sample_ids[test_ids_key], how="inner")
+            if use_ref_test:
+                test_ids = reference_ids["test"].join(
+                    sample_ids[test_ids_key], how="inner"
+                )
+            else:
+                test_ids = set(sample_ids[test_ids_key]).difference(
+                    set(
+                        reference_ids["val"].to_list()
+                        + reference_ids["train"].to_list()
+                    )
+                )
+
         else:
             # patient_ids = X.index.unique("IP_PATIENT_ID").values
             train_val_labels = y.groupby("IP_PATIENT_ID").first()

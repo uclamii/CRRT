@@ -8,8 +8,10 @@ from numpy import ndarray
 from sklearn.base import ClassifierMixin
 import collections
 import numpy as np
+from pandas import DataFrame
+import shutil
 
-from evaluate.utils import log_figure
+from evaluate.utils import log_figure, log_text
 
 
 def error_visualization(
@@ -33,17 +35,30 @@ def error_visualization(
     error_analyzer.fit(data, labels)
     error_analyzer.evaluate(data, labels, output_format="dict")
     error_analyzer.get_error_leaf_summary(leaf_selector=None, add_path_to_leaves=True)
-
-    error_viz = ErrorVisualizer(error_analyzer)
-    # graphviz source to png so it can be logged
-    tree_src = error_viz.plot_error_tree()
-    tree_src.format = "png"
-    tree_src.render(join("img_artifacts", f"{prefix}_tree"))
-    path = join("img_artifacts", f"{prefix}_tree.png")
-    if active_run():
-        log_artifact(path, dirname(path))
-
     leaf_id = error_analyzer._get_ranked_leaf_ids()[0]
+
+    if shutil.which("dot") is not None:  # make sure graphviz is installed
+        error_viz = ErrorVisualizer(error_analyzer)
+        # graphviz source to png so it can be logged
+        tree_src = error_viz.plot_error_tree()
+        tree_src.format = "png"
+
+        tree_src.render(join("img_artifacts", "error_viz", f"{prefix}_tree"))
+        path = join("img_artifacts", "error_viz", f"{prefix}_tree.png")
+        if active_run():
+            log_artifact(path, dirname(path))
+
+        plt.clf()
+        # TODO: tie this to feature importance top-k-features? (use same k)
+        # NOTE: depending on version of mealy, might break
+        # change source error_visualizer.py mealy file: "90" -> 90
+        error_viz.plot_feature_distributions_on_leaves(
+            leaf_selector=leaf_id, top_k_features=5
+        )
+
+        log_figure(
+            plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists")
+        )
 
     # Return summary of leaf, including ids of path
     leaves_summary = get_leaf_summary(error_analyzer, leaf_id)
@@ -65,6 +80,16 @@ def error_visualization(
     incorrect.append(leaves_summary[0]["n_errors"])
     correct.append(leaves_summary[0]["n_corrects"])
     nodes_to_leaf.append(" ".join(leaves_summary[0]["path_to_leaf"][-1].split(" ")[1:]))
+
+    error_table = {
+        "nodes_to_leaf": nodes_to_leaf,
+        "incorrect": incorrect,
+        "correct": correct,
+    }
+    log_text(
+        DataFrame(error_table).to_csv(),
+        join("img_artifacts", "error_viz", f"{prefix}_tree_summary_table.csv"),
+    )
 
     # Create stacked barchart
     plt.clf()
@@ -91,13 +116,6 @@ def error_visualization(
     ax.set_xlabel("Patient Counts")
     log_figure(plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_tree_summary"))
 
-    plt.clf()
-    # TODO: tie this to feature importance top-k-features? (use same k)
-    error_viz.plot_feature_distributions_on_leaves(
-        leaf_selector=leaf_id, top_k_features=5
-    )
-
-    log_figure(plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_leave_dists"))
     # except RuntimeError:
     #     # all predictions are correct no error analysis, skip
     #     pass

@@ -1,14 +1,42 @@
 from typing import List, Optional
 from numpy import ndarray
 from pandas import Index
-from os.path import join
+from os.path import join, dirname
 from sklearn.base import ClassifierMixin
 import matplotlib.pyplot as plt
 import lime
 import shap
 from sklearn.linear_model import LogisticRegression
+import mlflow
+from os import makedirs
+import pickle
 
 from evaluate.utils import log_figure, filter_fns
+
+
+def dump_shap_values(shap_values, preds, labels, prefix):
+    to_store = {
+        "values": shap_values.values,
+        "data": shap_values.data,
+        "base_values": shap_values.base_values,
+        "feature_names": shap_values.feature_names,
+    }
+
+    for filt in ["tp", "tn", "fp", "fn"]:
+        to_store[filt] = filter_fns[filt](preds, labels).nonzero()[0]
+
+    array_file = join(
+        "img_artifacts", "feature_importance", f"{prefix}_shap_values.pkl"
+    )
+    makedirs(
+        dirname(join("local_data", array_file)), exist_ok=True
+    )  # ensure dir exists
+
+    with open(join("local_data", array_file), "wb") as f:
+        pickle.dump(to_store, f)
+
+    if mlflow.active_run():
+        mlflow.log_artifact(join("local_data", array_file), dirname(array_file))
 
 
 def shap_explainability(
@@ -67,6 +95,8 @@ def shap_explainability(
             )
 
     if top_k:
+        dump_shap_values(shap_values, preds, labels, prefix)
+
         plt.clf()
         if len(shap_values.shape) == 3:
             shap.plots.beeswarm(shap_values[:, :, 1], show=False)

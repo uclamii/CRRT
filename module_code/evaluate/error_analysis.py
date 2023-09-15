@@ -1,5 +1,5 @@
 from typing import List, Tuple, Union
-from numpy import ndarray, unique
+from numpy import ndarray, unique, concatenate
 from pandas import Series, DataFrame, crosstab
 from sklearn.base import ClassifierMixin
 from scipy.stats import chi2_contingency, ttest_ind, mannwhitneyu, fisher_exact, shapiro
@@ -133,7 +133,14 @@ def model_randomness(
     # we can assume independence between these because
     # A) mutually exclusive groups
     # B) sampling without replacement
-    comparisons = [("fn", "tp"), ("fn", "tn"), ("fp", "tn"), ("fp", "tp")]
+    comparisons = [
+        ("fn", "tp"),
+        ("fn", "tn"),
+        ("fp", "tn"),
+        ("fp", "tp"),
+        ("tn", "tp"),
+        ("n", "p"),
+    ]
     table = {
         "Test Statistic": {},
         "p-value": {},
@@ -148,8 +155,16 @@ def model_randomness(
 
         for colidx, coln in enumerate(columns):
             # e.g. fn_vs_tp -> SBP (all rows)
-            dist_error = subsets[error_type][:, colidx]
-            dist_true = subsets[true_type][:, colidx]
+            if error_type == "n" and true_type == "p":
+                dist_error = concatenate(
+                    [subsets["tn"][:, colidx], subsets["fp"][:, colidx]]
+                )
+                dist_true = concatenate(
+                    [subsets["tp"][:, colidx], subsets["fn"][:, colidx]]
+                )
+            else:
+                dist_error = subsets[error_type][:, colidx]
+                dist_true = subsets[true_type][:, colidx]
             (
                 stat_name,
                 p_value,

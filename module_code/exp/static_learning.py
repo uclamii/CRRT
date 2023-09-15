@@ -30,9 +30,6 @@ def load_saved_data(
             data_transform,
         ) = data.load_data_params(join(args.best_model_path, "static_data"))
 
-    if args.new_eval_cohort and args.reference_window:
-        reference_ids = None
-
     data.setup(
         args,
         reference_ids=reference_ids,
