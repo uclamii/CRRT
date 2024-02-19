@@ -15,6 +15,11 @@ def unify_vital_names(vitals_df: DataFrame) -> DataFrame:
         "BLOOD PRESSURE": "SBP/DBP",
         "Resp": "Respirations",
         "PULSE OXIMETRY": "SpO2",
+        # Controls
+        "PULSE": "Pulse",
+        "RESPIRATIONS": "Respirations",
+        "TEMPERATURE": "Temperature",
+        "HEIGHT": "Height",
         # Cedars
         "HEIGHT_IN": "Height",
         "TEMP": "Temperature",
@@ -23,7 +28,14 @@ def unify_vital_names(vitals_df: DataFrame) -> DataFrame:
         "HEART_RATE": "Pulse",
         "WEIGHT_OZ": "Weight",
     }
-    return vitals_df.replace({"VITAL_SIGN_TYPE": mapping})
+
+    mask = vitals_df["VITAL_SIGN_TYPE"].isin(mapping.keys())
+    vitals_df.loc[mask, "VITAL_SIGN_TYPE"] = vitals_df.loc[mask, "VITAL_SIGN_TYPE"].map(
+        mapping.get
+    )
+    # vitals_df = vitals_df.replace({"VITAL_SIGN_TYPE": mapping})
+
+    return vitals_df
 
 
 def split_sbp_and_dbp(vitals_df: DataFrame) -> DataFrame:
@@ -36,9 +48,17 @@ def split_sbp_and_dbp(vitals_df: DataFrame) -> DataFrame:
     logging.info(f"Dropped {old_size - vitals_df.shape[0]} rows that were na.")
 
     # Ref: https://stackoverflow.com/a/57122617/1888794
-    vitals_df = vitals_df.apply(
+    # vitals_df = vitals_df.apply(
+    #     lambda col: col.str.split("/") if col.name in explode_cols else col
+    # ).explode(explode_cols)
+    # print(len(vitals_df))
+
+    spb_exploded = vitals_df[vitals_df["VITAL_SIGN_TYPE"] == "SBP/DBP"]
+    vitals_df = vitals_df[~(vitals_df["VITAL_SIGN_TYPE"] == "SBP/DBP")]
+    spb_exploded = spb_exploded.apply(
         lambda col: col.str.split("/") if col.name in explode_cols else col
     ).explode(explode_cols)
+    vitals_df = concat([vitals_df, spb_exploded], axis=0)
 
     return vitals_df
 
