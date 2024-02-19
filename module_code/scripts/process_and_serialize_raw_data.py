@@ -96,7 +96,7 @@ if __name__ == "__main__":
 
 
     ```
-    Option 2: Cohorts one-by-one
+    Option 2: Cohorts one-by-one, but with delta agg
     ```
     for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort cedars_crrt --slide-window-by ${i} --str-pre-start-delta 1d & done; wait;
     for i in {1,2,3}; do python module_code/scripts/process_and_serialize_raw_data.py --cohort ucla_crrt --slide-window-by ${i}  --str-pre-start-delta 1d & done; wait;
