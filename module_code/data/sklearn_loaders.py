@@ -16,9 +16,10 @@ import joblib
 from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split, StratifiedGroupKFold
+from sklearn.svm import LinearSVC
 from sklearn.pipeline import Pipeline
-from sklearn.feature_selection import SelectKBest
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.feature_selection import SelectKBest, SelectPercentile, SelectFromModel
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 # Local
 from data.longitudinal_features import CATEGORICAL_COL_REGEX
@@ -55,6 +56,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         test_split_size: float = None,
         kbest: int = None,
         corr_thresh: float = None,
+        lasso: float = None,
         impute_method: str = "simple",
         filters: Dict[str, Callable] = None,
     ):
@@ -71,6 +73,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         self.val_split_size = val_split_size
         self.kbest = kbest
         self.corr_thresh = corr_thresh
+        self.lasso = lasso
         self.filters = filters
         self.impute_method = impute_method
         if self.impute_method == "simple":
@@ -134,14 +137,25 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
 
         if args.new_eval_cohort and args.reference_window:
             split_args = [X, y, reference_ids]
+
+            # This is redundant and will happen for sure.
+            # It just means that not all data for testing exists in X, y
             if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
                 split_args += [X_eval, y_eval]
+
+            # This will take the entire set of patients from X_eval, minus any train and val patients
             X_y_tuples = self.split_dataset(*split_args, use_ref_test=False)
             split_names = list(X_y_tuples.keys())
         else:
             split_args = [X, y, reference_ids]
+
+            # This will happen if not reference window, but still new_eval_cohort
+            # It just means that not all data for testing exists in X, y
             if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
                 split_args += [X_eval, y_eval]
+
+            # This will only take the set of test patients from the predefined splits in the "split_ids.pkl" file
+            # After running with reference_window, the splits_ids.pkl should store the correct ids
             X_y_tuples = self.split_dataset(*split_args)
             split_names = list(X_y_tuples.keys())
 
@@ -168,7 +182,8 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # set self.train, self.val, self.test
         for split in split_names:
             X, y = X_y_tuples[split]
-            setattr(self, split, (self.data_transform(X), y))
+            if len(X) > 0:
+                setattr(self, split, (self.data_transform(X), y))
 
     def preload_data_for_featselect(self, args: Namespace):
         # Should be at least 2
@@ -190,6 +205,18 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 f"{len(X_all_cohorts[i].columns)} in {cohorts[i]} cohort. Removed {len(X_all_cohorts[i].columns.difference(all_cols))} columns"
             )
 
+        unique_features = (
+            all_cols.str.replace(".*_indicator", "indicator", regex=True)
+            .str.replace("RACE.*", "RACE", regex=True)
+            # tobacco/smoking/allergen aren't currenly in the intersection of features for all 3 cohorts, i've included it here just in case
+            .str.replace(".*TOBACCO_USER.*", "TOBACCO_USER", regex=True)
+            .str.replace(".*SMOKING_TOB_STATUS.*", "SMOKING_TOB_STATUS", regex=True)
+            .str.replace(".*ALLERGEN_ID.*", "ALLERGEN_ID", regex=True)
+            .str.replace("_(mean|min|max|std|skew|len)", "", regex=True)
+            .unique()
+        )
+        print(f"Original raw features {len(unique_features)}")
+
         return all_cols
 
     def load_data_and_additional_preproc(
@@ -203,14 +230,16 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
 
         X_all_cohorts = []
         y_all_cohorts = []
+        all_orig_columns = pd.Index([])
 
         for single_cohort in cohort:
-            X, y = self.single_cohort_load_data_and_additional_preproc(
+            X, y, orig_columns = self.single_cohort_load_data_and_additional_preproc(
                 args, single_cohort, reference_cols
             )
 
             # combine columns (outer join)
             all_columns = all_columns.union(X.columns)
+            all_orig_columns = all_orig_columns.union(orig_columns)
 
             X_all_cohorts.append(X)
             y_all_cohorts.append(y)
@@ -218,12 +247,25 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         X_all_cohorts = [X.reindex(columns=all_columns) for X in X_all_cohorts]
         X_all_cohorts = pd.concat(X_all_cohorts)
         y_all_cohorts = pd.concat(y_all_cohorts)
+
+        unique_features = (
+            all_orig_columns.str.replace(".*_indicator", "indicator", regex=True)
+            .str.replace("RACE.*", "RACE", regex=True)
+            # tobacco/smoking/allergen aren't currenly in the intersection of features for all 3 cohorts, i've included it here just in case
+            .str.replace(".*TOBACCO_USER.*", "TOBACCO_USER", regex=True)
+            .str.replace(".*SMOKING_TOB_STATUS.*", "SMOKING_TOB_STATUS", regex=True)
+            .str.replace(".*ALLERGEN_ID.*", "ALLERGEN_ID", regex=True)
+            .str.replace("_(mean|min|max|std|skew|len)", "", regex=True)
+            .unique()
+        )
+        print(f"All original: {len(all_orig_columns.unique())}, {len(unique_features)}")
+
         return (X_all_cohorts, y_all_cohorts)
 
     def single_cohort_load_data_and_additional_preproc(
         self, args: Namespace, cohort: str, reference_cols=None
     ) -> Tuple[pd.DataFrame, pd.Series]:
-        preprocessed_df = load_data(args, cohort)
+        preprocessed_df, orig_columns = load_data(args, cohort)
         X, y = (
             preprocessed_df.drop(self.outcome_col_name, axis=1),
             preprocessed_df[self.outcome_col_name],
@@ -244,7 +286,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             X = X.reindex(columns=reference_cols)
             # drop cols in X but not in reference
             X = X.drop(X.columns.difference(reference_cols), axis=1)
-        return (X, y)
+        return X, y, orig_columns
 
     @classmethod
     @staticmethod
@@ -297,11 +339,13 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                             )
                         ],
                         remainder="passthrough",
-                        n_jobs=min(
-                            8, int(joblib.cpu_count(only_physical_cores=True))
-                        )  # use half of the cpus
-                        if self.impute_method == "knn"
-                        else None,
+                        n_jobs=(
+                            min(
+                                8, int(joblib.cpu_count(only_physical_cores=True))
+                            )  # use half of the cpus
+                            if self.impute_method == "knn"
+                            else None
+                        ),
                     ),
                 ),
                 # zero out everything else
@@ -333,6 +377,10 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             return SelectKBest(f_pearsonr, k=self.kbest)
         elif self.corr_thresh:
             return SelectThreshold(f_pearsonr, threshold=self.corr_thresh)
+        elif self.lasso:
+            lsvc = LinearSVC(C=self.lasso, penalty="l1", dual=False)
+            return SelectFromModel(lsvc, prefit=False)
+
         # passthrough transform
         return SelectKBest(lambda X, y: np.zeros(X.shape[1]), k="all")
 
