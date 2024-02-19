@@ -152,6 +152,18 @@ def add_global_args(
         default=0,
         help="If subgrouping, we may want to know the minimum slide, AKA the minimum days we allow someone to be on CRRT for this analysis.",
     )
+    time_p.add_argument(
+        "--drop-percent",
+        type=int,
+        default=None,
+        help="Features above percent missingness are removed",
+    )
+    time_p.add_argument(
+        "--filter-year",
+        default=False,
+        type=bool,
+        help="Filter controls data by year",
+    )
 
     # Logging / Tracking
     logging_p = p.add_argument_group("Logging / Tracking")
