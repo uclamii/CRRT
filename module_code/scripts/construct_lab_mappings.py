@@ -2,8 +2,8 @@ from argparse import Namespace
 import pickle
 import sys
 from os import getcwd
-from os.path import join
-from pandas import DataFrame
+from os.path import join, isfile
+from pandas import DataFrame, read_excel
 import re
 from fuzzywuzzy import fuzz
 import jellyfish
@@ -44,10 +44,7 @@ def fuzzy_pairwise_diff(left: list, right: list, mode: str = None) -> DataFrame:
     return distances
 
 
-def create_and_serialize_labs_mapping_dict(
-    args: Namespace, cedars_labs: set, ucla_labs: set
-) -> None:
-
+def create_labs_mapping_dict(args: Namespace, cedars_labs: set, ucla_labs: set) -> None:
     matching_cedars_lab_names = []
     matching_ucla_lab_names = []
 
@@ -86,7 +83,6 @@ def create_and_serialize_labs_mapping_dict(
                 matching_cedars_lab_names.append(row.name[0])
                 matching_ucla_lab_names.append(row.name[1])
         else:
-
             for character in cedars_characters.keys():
                 cedars_characters[character] = row.name[0].count(character)
                 ucla_characters[character] = row.name[1].count(character)
@@ -156,16 +152,10 @@ def create_and_serialize_labs_mapping_dict(
         ]
 
     print(len(final_mapping))
-
-    # Save mapping
-    with open(join(args.cedars_crrt_data_dir, "Labs_Mapping.pkl"), "wb") as f:
-        pickle.dump(final_mapping, f)
+    return final_mapping
 
 
-def main():
-    load_cli_args()
-    args = init_cli_args()
-
+def load_labs_from_scratch(args):
     cedars_labs = read_files_and_combine(
         [FILE_NAMES["labs"]], args.cedars_crrt_data_dir
     )
@@ -181,7 +171,56 @@ def main():
         {"RESULT": "RESULTS", "NAME": "COMPONENT_NAME"}, axis=1
     )
 
-    create_and_serialize_labs_mapping_dict(args, cedars_labs, ucla_labs)
+    final_mapping = create_labs_mapping_dict(args, cedars_labs, ucla_labs)
+    return final_mapping
+
+
+def use_manual_file(cohort):
+    df = read_excel("../Data/manual_labs_mapping.xlsx")
+    mapping = {}
+    for i, row in df.iterrows():
+        # nan
+        if row[cohort] != row[cohort]:
+            continue
+        if row[f"{cohort} Map"] != row[f"{cohort} Map"]:
+            continue
+
+        if row[cohort] != row[f"{cohort} Map"]:
+            if row[cohort] in mapping.keys():
+                assert mapping[row[cohort]] == row[f"{cohort} Map"], print(
+                    cohort, mapping[row[cohort]], row[f"{cohort} Map"]
+                )
+            mapping[row[cohort]] = row[f"{cohort} Map"]
+    return mapping
+
+
+def main():
+    load_cli_args()
+    args = init_cli_args()
+
+    if isfile("../Data/manual_labs_mapping.xlsx"):
+        cohorts = ["UCLA CRRT", "UCLA CRRT", "Cedars CRRT"]
+        for cohort, raw_data_dir in zip(
+            cohorts,
+            [
+                args.ucla_crrt_data_dir,
+                args.ucla_control_data_dir,
+                args.cedars_crrt_data_dir,
+            ],
+        ):
+            mapping = use_manual_file(cohort)
+            with open(join(raw_data_dir, "Labs_Mapping.pkl"), "wb") as f:
+                pickle.dump(mapping, f)
+    else:
+        mapping = load_labs_from_scratch(args)
+        for raw_data_dir in [
+            args.ucla_crrt_data_dir,
+            args.ucla_control_data_dir,
+            args.cedars_crrt_data_dir,
+        ]:
+            # Save mapping
+            with open(join(raw_data_dir, "Labs_Mapping.pkl"), "wb") as f:
+                pickle.dump(mapping, f)
 
 
 if __name__ == "__main__":

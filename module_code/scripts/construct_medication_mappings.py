@@ -3,8 +3,8 @@ import difflib
 import pickle
 import sys
 from os import getcwd
-from os.path import join
-from pandas import DataFrame
+from os.path import join, isfile
+from pandas import DataFrame, read_excel
 from fuzzywuzzy import fuzz
 
 sys.path.insert(0, join(getcwd(), "module_code"))
@@ -13,10 +13,9 @@ from cli_utils import load_cli_args, init_cli_args
 from data.utils import FILE_NAMES, read_files_and_combine
 
 
-def create_and_serialize_medication_mapping_dict(
+def create_medication_mapping_dict(
     args: Namespace, only_cedars: set, all_ucla: set
 ) -> None:
-
     exceptions = {
         "ANTIDEPRESSANT - SEROTONIN-2 ANTAGONIST-REUPTAKE INHIBITORS (SARIS)",
         "ANTIDEPRESSANT-NOREPINEPHRINE AND DOPAMINE REUPTAKE INHIBITORS (NDRIS)",
@@ -253,7 +252,6 @@ def create_and_serialize_medication_mapping_dict(
     missing_mapping = []
 
     for i, reference in enumerate(only_cedars):
-
         comparators = []
         sorted_results = []
         partial_results = []
@@ -372,14 +370,10 @@ def create_and_serialize_medication_mapping_dict(
     print("Missing: ", len(missing_mapping))
 
     mapping = mapping | manual_mapping
-    with open(join(args.cedars_crrt_data_dir, "Medications_Mapping.pkl"), "wb") as f:
-        pickle.dump(mapping, f)
+    return mapping
 
 
-def main():
-    load_cli_args()
-    args = init_cli_args()
-
+def load_meds_from_scratch(args):
     cedars_meds = read_files_and_combine([FILE_NAMES["rx"]], args.cedars_crrt_data_dir)
     ucla_meds = read_files_and_combine([FILE_NAMES["rx"]], args.ucla_crrt_data_dir)
 
@@ -401,7 +395,58 @@ def main():
     )
     all_ucla = set(ucla_meds["PHARM_SUBCLASS"].unique())
 
-    create_and_serialize_medication_mapping_dict(args, only_cedars, all_ucla)
+    mapping = create_medication_mapping_dict(args, only_cedars, all_ucla)
+    return mapping
+
+
+def use_manual_file(cohort):
+    df = read_excel("../Data/manual_med_mappings.xlsx")
+    mapping = {}
+    for i, row in df.iterrows():
+        # nan
+        if row[cohort] != row[cohort]:
+            continue
+        if row[f"{cohort} Map"] != row[f"{cohort} Map"]:
+            continue
+
+        if row[cohort] != row[f"{cohort} Map"]:
+            if row[cohort] in mapping.keys():
+                assert mapping[row[cohort]] == row[f"{cohort} Map"], print(
+                    cohort, mapping[row[cohort]], row[f"{cohort} Map"]
+                )
+            mapping[row[cohort]] = row[f"{cohort} Map"]
+    return mapping
+
+
+def main():
+    load_cli_args()
+    args = init_cli_args()
+
+    if isfile("../Data/manual_med_mappings.xlsx"):
+        # same mapping for ucla and controls
+        cohorts = ["UCLA CRRT", "UCLA CRRT", "Cedars CRRT"]
+
+        for cohort, raw_data_dir in zip(
+            cohorts,
+            [
+                args.ucla_crrt_data_dir,
+                args.ucla_control_data_dir,
+                args.cedars_crrt_data_dir,
+            ],
+        ):
+            mapping = use_manual_file(cohort)
+            with open(join(raw_data_dir, "Medications_Mapping.pkl"), "wb") as f:
+                pickle.dump(mapping, f)
+    else:
+        # we have to put this in each data dir because of how the labs processing works
+        mapping = load_meds_from_scratch(args)
+        for raw_data_dir in [
+            args.ucla_crrt_data_dir,
+            args.ucla_control_data_dir,
+            args.cedars_crrt_data_dir,
+        ]:
+            with open(join(raw_data_dir, "Medications_Mapping.pkl"), "wb") as f:
+                pickle.dump(mapping, f)
 
 
 if __name__ == "__main__":

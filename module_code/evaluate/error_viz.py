@@ -115,6 +115,7 @@ def error_visualization(
     ax.legend()
     ax.set_xlabel("Patient Counts")
     log_figure(plt.gcf(), join("img_artifacts", "error_viz", f"{prefix}_tree_summary"))
+    plt.close()
 
     # except RuntimeError:
     #     # all predictions are correct no error analysis, skip

@@ -4,6 +4,7 @@ import numpy as np
 from functools import reduce
 from typing import List, Optional, Tuple, Dict
 from scipy.stats import pearsonr
+import csv
 
 from pandas import DataFrame, Series, merge, get_dummies, concat, read_csv
 from pandas.errors import ParserError
@@ -24,9 +25,35 @@ FILE_NAMES = {
     "labs": "Labs.txt",
     "rx": "Medications.txt",
     "vitals": "Flowsheet_Vitals.txt",
+    "vitals_noduplicates": "Flowsheet_Vitals_noduplicates.txt",
     "dx": "Encounter_Diagnoses.txt",
     "enc": "Encounters.txt",
 }
+
+
+def icd9_to_icd10(df: DataFrame, icd_mapping_file: str):
+    """Converts ICD9 codes to ICD10 codes if mapping exists in mapping file"""
+    # Open the mapping file
+    csv_dict = csv.reader(open(icd_mapping_file), delimiter="|")
+    icd_mapping = {}
+    for row in csv_dict:
+        icd_mapping[row[0]] = row[1]
+
+    # Focus on ICD9 cases where mapping exists
+    mask = (df["ICD_TYPE"] == 9) & (df["ICD_CODE"].isin(list(icd_mapping.keys())))
+    print("ICD9 Counts")
+    print((df["ICD_TYPE"] == 9).value_counts())
+    print(mask.value_counts())
+
+    # This is a expensive replace (millions of rows)
+    # Note, if using .replace(icd_mapping), a huge amount of overhead is observed
+    # .map(icd_mapping.get) is SIGNIFICANTLY faster. The caveat is that replace can
+    #   handle when a code is not in the mapping. map requires that all codes be in
+    #   the mapping dictionary. Use the mask to get around this issue
+    df.loc[mask, "ICD_CODE"] = df.loc[mask, "ICD_CODE"].map(icd_mapping.get)
+    df.loc[mask, "ICD_TYPE"] = 10
+
+    return df
 
 
 def time_delta_to_str(delta: Dict[str, int]) -> str:
@@ -211,8 +238,16 @@ class SelectThreshold(_BaseFilter):
         return mask
 
 
-def get_pt_type_indicators(df: DataFrame) -> DataFrame:
+def get_pt_type_indicators(df: DataFrame, use_other=False) -> DataFrame:
     """Look in diagnoses and problems for ccs codes related to heart, liver, and infection."""
+    all_columns = df.columns.to_list()
+    code_set = set()
+    for col in all_columns:
+        if any(key in col for key in ["dx_CCS_CODE", "pr_CCS_CODE"]) and all(
+            key not in col for key in ["na", "259"]
+        ):
+            code_set.add(col)
+
     tables = ["dx", "pr"]
     types = [
         {"name": "liver", "codes": [6, 16, 149, 150, 151, 222]},
@@ -251,7 +286,28 @@ def get_pt_type_indicators(df: DataFrame) -> DataFrame:
                 if column_name in df:
                     masks.append((df[column_name] > 0).astype(int))
 
+                    code_set.discard(column_name)
+
         df[f"{pt_type['name']}_pt_indicator"] = reduce(
             lambda maska, maskb: maska | maskb, masks
         )
+
+    if use_other:
+        masks = [0]
+        for column_name in code_set:
+            masks.append((df[column_name] > 0).astype(int))
+            if masks[-1].mean() > 0.1:
+                print(column_name, masks[-1].mean())
+        df[f"other_pt_indicator"] = reduce(lambda maska, maskb: maska | maskb, masks)
+
+        df[f"no_hli_pt_indicator"] = 1 - (
+            df[f"heart_pt_indicator"]
+            | df[f"liver_pt_indicator"]
+            | df[f"infection_pt_indicator"]
+        )
+
+        df[f"other_pt_indicator"] = (
+            df[f"other_pt_indicator"] & df[f"no_hli_pt_indicator"]
+        )
+
     return df

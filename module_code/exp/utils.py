@@ -32,6 +32,7 @@ GRID_HP_MAP = {
         "min_samples_split": [2, 5],
         "bootstrap": [True, False],
         "n_estimators": list(range(10, 100, 10)) + list(range(100, 1050, 100)),
+        "n_jobs": [8],
     },
     "lgb": {
         "num_leaves": [20, 40, 60, 80, 100],
@@ -39,6 +40,7 @@ GRID_HP_MAP = {
         "max_depth": [-1, 5, 10, 20],
         "learning_rate": [0.05, 0.1, 0.2],
         "reg_alpha": [0, 0.01, 0.03],
+        "n_jobs": [8],
     },
     "xgb": {
         "learning_rate": [0.001, 0.05, 0.10, 0.15],
@@ -53,6 +55,7 @@ GRID_HP_MAP = {
         "n_estimators": list(range(10, 100, 10))
         + list(range(100, 1550, 100))
         + list(range(2000, 10050, 1000)),
+        "n_jobs": [8],
     },
 }
 
@@ -75,7 +78,12 @@ def time_delta_str_to_dict(delta_str: Optional[str]) -> Optional[Dict[str, int]]
 def get_optuna_grid(modeln: str, experiment_name: str, trials) -> Dict[str, Any]:
     if experiment_name == "static_learning":
         feature_selection_method = trials.suggest_categorical(
-            "feature_selection", ["kbest", "corr_thresh"]
+            "feature_selection",
+            [
+                "kbest",
+                "corr_thresh",
+                #  "lasso"
+            ],
         )
 
         params = {
@@ -93,15 +101,21 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials) -> Dict[str, Any]
                 for k, v in GRID_HP_MAP.get(modeln, {}).items()
             },
             "impute_method": trials.suggest_categorical(
-                "imputation", ["simple", "knn"]
+                "imputation",
+                [
+                    "simple",
+                    #  "knn"
+                ],
             ),
+            "drop_percent": trials.suggest_int("drop_percent", 85, 95, step=5),
         }
 
         # we run trials back to back so set a value for one and clear the other out
         if feature_selection_method == "kbest":
-            params["kbest"] = trials.suggest_int("kbest", 3, 18, step=5)
+            params["kbest"] = trials.suggest_int("kbest", 5, 25, step=5)
             params["corr_thresh"] = None
-        else:
+            params["lasso"] = None
+        elif feature_selection_method == "corr_thresh":
             params["corr_thresh"] = trials.suggest_float(
                 # "corr_thresh", 0.1, 0.9, step=0.1
                 "corr_thresh",
@@ -110,5 +124,15 @@ def get_optuna_grid(modeln: str, experiment_name: str, trials) -> Dict[str, Any]
                 step=0.005,
             )
             params["kbest"] = None
+            params["lasso"] = None
+        elif feature_selection_method == "lasso":
+            params["lasso"] = trials.suggest_float(
+                "lasso",
+                0.02,
+                0.05,
+                step=0.01,
+            )
+            params["kbest"] = None
+            params["corr_thresh"] = None
 
         return params

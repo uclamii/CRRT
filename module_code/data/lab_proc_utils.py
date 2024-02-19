@@ -89,14 +89,21 @@ def specific_lab_preproc(df, lab_name):
     # check if lab exists
     # only run on cohorts that contain <lab_name>
     if lab_name in df["COMPONENT_NAME"].unique():
-        ABG_lab_s = (
+        lab_result = (
             df[df["COMPONENT_NAME"] == lab_name]["RESULTS"]
             .str.extract(r"(\d+(\.\d+)?)%")[0]  # regex to extract percentages
             .astype(float)
         )
-        ABG_lab_s[ABG_lab_s > 100] = nan
-        df.loc[df["COMPONENT_NAME"] == lab_name, "RESULTS"] = ABG_lab_s
+        lab_result[lab_result > 100] = nan
+        df.loc[df["COMPONENT_NAME"] == lab_name, "RESULTS"] = lab_result
     return df
+
+
+def force_boolean(s):
+    """If the lab result is a string 'negative', assingn to zero"""
+    negatives = s.str.contains("(?i)neg|negative|false", na=False)
+    s[negatives] = "0"
+    return s
 
 
 def force_to_upper_lower_bound(s):
@@ -110,7 +117,7 @@ def force_to_upper_lower_bound(s):
 
 def force_lab_numeric(results: Series) -> Series:
     # upper/lower bound by stripping >/<[=] and words
-    bounded = results.str.replace("<|>|=|[\D]", "")
+    bounded = results.str.replace("+|<|>|=|[\D]", "")
     # keep numbers from original (strip will be NaN), and make any strings that aren't numeric (e.g. Test Not Performed) NaNs.
     return to_numeric(bounded.where(bounded.notna(), results).replace("", nan))
 
@@ -124,6 +131,9 @@ def map_encounter_to_patient(
 
     loading_message("Encounters")
     enc_df = read_files_and_combine([encounter_file], raw_data_dir)
+
+    # for controls
+    enc_df = enc_df.rename({"IP_ENC_ID": "IP_ENCOUNTER_ID"}, axis=1)
 
     # Left merge adds a new IP_PATIENT_ID_y column for IP_ENCOUNTER_ID in enc_df that exist in df
     # The original IP_PATIENT_ID is saved as IP_PATIENT_ID_x
@@ -154,7 +164,52 @@ def map_labs(
     with open(join(raw_data_dir, lab_mapping_file), "rb") as f:
         loaded_dict = load(f)
 
-    static_df["COMPONENT_NAME"] = static_df["COMPONENT_NAME"].replace(loaded_dict)
+    # This is a expensive replace (millions of rows)
+    # Note, if using .replace(), a huge amount of overhead is observed
+    # .map(dict.get) is SIGNIFICANTLY faster. The caveat is that replace can
+    #   handle when a code is not in the mapping. map requires that all codes be in
+    #   the mapping dictionary. Use the mask to get around this issue
+    mask = static_df["COMPONENT_NAME"].isin(loaded_dict.keys())
+    static_df.loc[mask, "COMPONENT_NAME"] = static_df.loc[mask, "COMPONENT_NAME"].map(
+        loaded_dict.get
+    )
+    # static_df["COMPONENT_NAME"] = static_df["COMPONENT_NAME"].replace(loaded_dict)
+
+    # pretty crude, some labs should be split into venous/arterial. right now, encode possible mappings with $, with the convention of arterial being first. Iterate and find these
+    def venous_arterial_split(description, component):
+        if "ven" in description.lower():
+            return component.split("$")[-1]
+        elif "art" in description.lower():
+            return component.split("$")[0]
+        else:
+            return component.split("$")[0]
+
+    POSSIBLE_VEN_ART = [
+        "BICARBONATE, ARTERIAL$BICARBONATE, VENOUS",
+        "BASE EXCESS, ARTERIAL$BASE EXCESS, VENOUS",
+        "O2 SATURATION-ARTERIAL$O2 SATURATION-VENOUS",
+        "PH, ARTERIAL$PH,VENOUS",
+        "PCO2, ARTERIAL$PCO2,VENOUS",
+        "PO2, ARTERIAL$PO2,VENOUS",
+        "FIO2, ARTERIAL$FIO2, VENOUS",
+    ]
+    mask = static_df["COMPONENT_NAME"].isin(POSSIBLE_VEN_ART)
+    static_df.loc[mask, "COMPONENT_NAME"] = static_df.loc[
+        mask, ["COMPONENT_NAME", "DESCRIPTION"]
+    ].apply(
+        lambda x: venous_arterial_split(x["DESCRIPTION"], x["COMPONENT_NAME"]), axis=1
+    )
+    # for i, row in static_df.iterrows():
+    #     if "$" not in row["COMPONENT_NAME"]:
+    #         continue
+
+    #     if "ven" in row["DESCRIPTION"].lower():
+    #         static_df.loc[i, "COMPONENT_NAME"] = row["COMPONENT_NAME"].split("$")[-1]
+    #     elif "art" in row["DESCRIPTION"].lower():
+    #         static_df.loc[i, "COMPONENT_NAME"] = row["COMPONENT_NAME"].split("$")[0]
+    #     else:
+    #         static_df.loc[i, "COMPONENT_NAME"] = row["COMPONENT_NAME"].split("$")[0]
+
     # TODO: flag to filter by mapping on UCLA-CEDARS or UCLA-CEDARS-COntrol_UCLA or no filtering
 
     return static_df
@@ -180,7 +235,10 @@ def align_units(
     with open(join(raw_data_dir, unit_mapping_file), "rb") as f:
         mapping = load(f)  # map lab -> mode unit + count
 
-    labs_df["RESULTS"] = labs_df.apply(convert(mapping, unit_converter), axis=1)
+    mask = labs_df["COMPONENT_NAME"].isin(mapping.keys())
+    labs_df.loc[mask, "RESULTS"] = labs_df.loc[
+        mask, ["RESULTS", "COMPONENT_NAME", "REFERENCE_UNIT"]
+    ].apply(convert(mapping, unit_converter), axis=1)
     # Drop all rows with NaN results
     return labs_df[labs_df["RESULTS"].notna()]
 

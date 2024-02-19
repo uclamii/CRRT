@@ -6,6 +6,7 @@ from os import getcwd
 from os.path import join
 from pandas import DataFrame, read_excel
 from hcuppy.cpt import CPT
+import tqdm
 
 sys.path.insert(0, join(getcwd(), "module_code"))
 
@@ -28,11 +29,9 @@ def trace_code_connections(starting_code: str, mapping_df: DataFrame) -> List[st
     codes_to_visit = {starting_code}
 
     while len(codes_to_visit) > 0:
-
         current_code = codes_to_visit.pop()
 
         if current_code not in visited_codes:
-
             cpt_code = cpt.get_cpt_section(current_code)
 
             # If there is one cpt code, store it
@@ -63,11 +62,10 @@ def trace_code_connections(starting_code: str, mapping_df: DataFrame) -> List[st
 def create_and_serialize_cpt_mapping_dict(
     args: Namespace, procedures: DataFrame, mapping_df: DataFrame
 ) -> None:
-
     original_codes = []
     cpt_codes = []
 
-    for i, code in enumerate(procedures["PROC_CODE"].unique()):
+    for i, code in tqdm.tqdm(enumerate(procedures["PROC_CODE"].unique())):
         # Trace all connected codes
         found_code = trace_code_connections(code, mapping_df)
 
@@ -76,10 +74,7 @@ def create_and_serialize_cpt_mapping_dict(
 
     mapping_dict = dict(zip(original_codes, cpt_codes))
 
-    with open(
-        join(args.cedars_crrt_data_dir, "Procedures_Code_Mapping.pkl"), "wb"
-    ) as f:
-        pickle.dump(mapping_dict, f)
+    return mapping_dict
 
 
 def main():
@@ -99,7 +94,14 @@ def main():
     proc_mapping["PROC_CODE"] = proc_mapping["PROC_CODE"].astype(str)
     proc_mapping["OT_PROC_CODE"] = proc_mapping["OT_PROC_CODE"].astype(str)
 
-    create_and_serialize_cpt_mapping_dict(args, cedars_proc, proc_mapping)
+    mapping = create_and_serialize_cpt_mapping_dict(args, cedars_proc, proc_mapping)
+    for raw_data_dir in [
+        # args.ucla_crrt_data_dir,
+        # args.ucla_control_data_dir,
+        args.cedars_crrt_data_dir,
+    ]:
+        with open(join(raw_data_dir, "Procedures_Code_Mapping.pkl"), "wb") as f:
+            pickle.dump(mapping, f)
 
 
 if __name__ == "__main__":
