@@ -15,13 +15,19 @@ from data.lab_proc_utils import (
     map_labs,
     specific_lab_preproc,
     force_to_upper_lower_bound,
+    force_boolean,
 )
 from data.longitudinal_utils import (
     aggregate_cat_feature,
     aggregate_ctn_feature,
     hcuppy_map_code,
 )
-from data.utils import FILE_NAMES, loading_message, read_files_and_combine
+from data.utils import (
+    FILE_NAMES,
+    loading_message,
+    read_files_and_combine,
+    icd9_to_icd10,
+)
 from data.vitals_proc_utils import unify_vital_names, split_sbp_and_dbp, calculate_bmi
 
 """
@@ -37,13 +43,19 @@ def load_diagnoses(
     dx_file: str = FILE_NAMES["dx"],
     time_interval: Optional[str] = None,
     time_window: Optional[Union[DataFrame, str]] = None,
+    icd_mapping_file: str = "../Data/icd_mappings.csv",
 ) -> DataFrame:
     loading_message("Diagnoses")
     dx_df = read_files_and_combine([dx_file], raw_data_dir)
 
     # Cedars alignment. Assume contact date is diagnosis date since that's the date we have
     dx_df = dx_df.rename(
-        {"CURRENT_ICD10_LIST": "ICD_CODE", "CONTACT_DATE": "DIAGNOSIS_DATE"}, axis=1
+        {
+            # CEDARS
+            "CURRENT_ICD10_LIST": "ICD_CODE",
+            "CONTACT_DATE": "DIAGNOSIS_DATE",
+        },
+        axis=1,
     )
 
     # convert icd10 to ccs to reduce number of categories for diagnoses.
@@ -52,6 +64,15 @@ def load_diagnoses(
     # They will just show as NaNs.
     # NOTE: This needs to change if our time window gets very large and we extend into 2013-15.
     # icd10_mask = dx_df["ICD_TYPE"] == 10
+
+    # Cedars does not have ICD_TYPE (all ICD10)
+    if "ICD_TYPE" in dx_df.columns:
+        dx_df = icd9_to_icd10(dx_df, icd_mapping_file)
+
+        # remove remaining icd9
+        icd10_mask = dx_df["ICD_TYPE"] == 10
+        dx_df = dx_df[icd10_mask]
+
     dx_df = hcuppy_map_code(
         dx_df,
         code_col="ICD_CODE",
@@ -78,11 +99,16 @@ def load_diagnoses(
 def load_vitals(
     raw_data_dir: str,
     vitals_file: str = FILE_NAMES["vitals"],
+    vitals_noduplicates_file: str = FILE_NAMES["vitals_noduplicates"],
     time_interval: Optional[str] = None,
     time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     loading_message("Vitals")
-    vitals_df = read_files_and_combine([vitals_file], raw_data_dir)
+    if isfile(join(raw_data_dir, vitals_noduplicates_file)):
+        print("Loading file without duplicates")
+        vitals_df = read_files_and_combine([vitals_noduplicates_file], raw_data_dir)
+    else:
+        vitals_df = read_files_and_combine([vitals_file], raw_data_dir)
 
     # Cedars alignment.
     vitals_df = vitals_df.rename(
@@ -100,7 +126,12 @@ def load_vitals(
     # drop duplicates for the same patient for the same vital (taken at same time indicates duplicate)
     old_size = vitals_df.shape[0]
     vitals_df = vitals_df.drop_duplicates(
-        subset=["IP_PATIENT_ID", "VITAL_SIGN_TYPE", "VITAL_SIGN_TAKEN_TIME"]
+        subset=[
+            "IP_PATIENT_ID",
+            "VITAL_SIGN_TYPE",
+            "VITAL_SIGN_TAKEN_TIME",
+            "VITAL_SIGN_VALUE",
+        ]
     )
     logging.info(f"Dropped {old_size - vitals_df.shape[0]} rows that were duplicates.")
 
@@ -157,7 +188,10 @@ def load_medications(
     )
 
     # Additional cleanup
+    rx_df = rx_df.dropna(subset=["PHARM_SUBCLASS"])
     rx_df["PHARM_SUBCLASS"] = rx_df["PHARM_SUBCLASS"].str.upper()
+    rx_df = rx_df[~rx_df["PHARM_SUBCLASS"].str.contains("EACH")]  # 277
+    rx_df = rx_df[~rx_df["PHARM_SUBCLASS"].str.isnumeric()]  # 251
 
     rx_df = map_medications(rx_df, raw_data_dir)
 
@@ -177,12 +211,23 @@ def map_medications(
     medication_mapping_file: str = "Medications_Mapping.pkl",
 ) -> DataFrame:
     if not isfile(join(raw_data_dir, medication_mapping_file)):
-        return rx_df
+        raise Exception(
+            "Medication mapping file is missing. Please run the `construct_medication_mappings.py` script."
+        )
 
     with open(join(raw_data_dir, medication_mapping_file), "rb") as f:
         loaded_dict = load(f)
 
-    rx_df["PHARM_SUBCLASS"] = rx_df["PHARM_SUBCLASS"].replace(loaded_dict)
+    # This is a expensive replace (millions of rows)
+    # Note, if using .replace(), a huge amount of overhead is observed
+    # .map(dict.get) is SIGNIFICANTLY faster. The caveat is that replace can
+    #   handle when a code is not in the mapping. map requires that all codes be in
+    #   the mapping dictionary. Use the mask to get around this issue
+    mask = rx_df["PHARM_SUBCLASS"].isin(loaded_dict.keys())
+    rx_df.loc[mask, "PHARM_SUBCLASS"] = rx_df.loc[mask, "PHARM_SUBCLASS"].map(
+        loaded_dict.get
+    )
+    # rx_df["PHARM_SUBCLASS"] = rx_df["PHARM_SUBCLASS"].replace(loaded_dict)
 
     return rx_df
 
@@ -197,9 +242,19 @@ def load_labs(
     labs_df = read_files_and_combine([labs_file], raw_data_dir)
 
     labs_df = map_encounter_to_patient(raw_data_dir, labs_df)
-    labs_df = labs_df.rename({"RESULT": "RESULTS", "NAME": "COMPONENT_NAME"}, axis=1)
+    labs_df = labs_df.rename(
+        {
+            "RESULT": "RESULTS",
+            "NAME": "COMPONENT_NAME",
+            "PROCEDURE_DESCRIPTION": "DESCRIPTION",
+        },
+        axis=1,
+    )
+
     labs_df = map_labs(labs_df, raw_data_dir)
-    labs_df = specific_lab_preproc(labs_df, lab_name="ABG INSPIRED O2")
+    labs_df = specific_lab_preproc(labs_df, lab_name="FIO2, ARTERIAL")
+    labs_df = specific_lab_preproc(labs_df, lab_name="FIO2, VENOUS")
+    labs_df["RESULTS"] = force_boolean(labs_df["RESULTS"])
     labs_df["RESULTS"] = force_to_upper_lower_bound(labs_df["RESULTS"])
     # alignment comes before removing any strings from RESULTS
     labs_df = align_units(labs_df, raw_data_dir)
@@ -230,6 +285,7 @@ def load_problems(
     problems_dx_file: str = FILE_NAMES["pr_dx"],
     time_interval: Optional[str] = None,
     time_window: Optional[Union[DataFrame, str]] = None,
+    icd_mapping_file: str = "../Data/icd_mappings.csv",
 ) -> DataFrame:
     loading_message("Problems")
     # Control and Cedars data doesn't have the dx_file. Only keep the files that exist.
@@ -252,11 +308,13 @@ def load_problems(
 
     # Cedars does not have ICD_TYPE (all ICD10)
     if "ICD_TYPE" in problems_df.columns:
-        active_and_icd10_mask = (problems_df["PROBLEM_STATUS"] == "Active") & (
-            problems_df["ICD_TYPE"] == 10
-        )
+        problems_df = icd9_to_icd10(problems_df, icd_mapping_file)
+
+        active_and_icd10_mask = (
+            problems_df["PROBLEM_STATUS"].str.upper() == "ACTIVE"
+        ) & (problems_df["ICD_TYPE"] == 10)
     else:
-        active_and_icd10_mask = problems_df["PROBLEM_STATUS"] == "ACTIVE"
+        active_and_icd10_mask = problems_df["PROBLEM_STATUS"].str.upper() == "ACTIVE"
 
     problems_df = hcuppy_map_code(
         problems_df[active_and_icd10_mask],
@@ -355,6 +413,10 @@ def map_proc_code_to_cpt(
 
     static_df["PROC_CODE"] = static_df["PROC_CODE"].astype(str)
 
-    static_df["PROC_CODE"] = static_df["PROC_CODE"].replace(loaded_dict)
+    mask = static_df["PROC_CODE"].isin(loaded_dict.keys())
+    static_df.loc[mask, "PROC_CODE"] = static_df.loc[mask, "PROC_CODE"].map(
+        loaded_dict.get
+    )
+    # static_df["PROC_CODE"] = static_df["PROC_CODE"].replace(loaded_dict)
 
     return static_df
