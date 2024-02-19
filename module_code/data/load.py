@@ -5,7 +5,7 @@ from os.path import join
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Dict, List, Optional
-from pandas import DataFrame, DatetimeIndex, read_excel, merge
+from pandas import DataFrame, DatetimeIndex, read_excel, merge, read_csv
 import numpy as np
 
 # for serialization on the fly
@@ -111,16 +111,32 @@ def load_outcomes(
     ).set_index(group_by)
 
 
-def construct_outcomes(procedures_df: DataFrame, merge_on: List[str]) -> DataFrame:
+def construct_outcomes(
+    procedures_df: DataFrame,
+    merge_on: List[str],
+    random_state: int = 42,
+    filter_year: bool = False,
+) -> DataFrame:
     """
     For control cohort that doesn't have outcomes.
     Instead of CRRT start date we use a basic heuristic for a "anchoring" date / pseudo start date for time windows
     # In controls this is 4725 patients
     """
+
+    if filter_year:
+        previous_procedure_cnt = len(procedures_df)
+        procedures_df = procedures_df[
+            (
+                (procedures_df["PROC_DATE"].astype("datetime64[ns]").dt.year > 2015)
+                & (procedures_df["PROC_DATE"].astype("datetime64[ns]").dt.year < 2022)
+            )
+        ]
+        print(f"Kept {len(procedures_df)} of {previous_procedure_cnt} within 2015-2022")
+
     outcomes = (
         procedures_df.groupby("IP_PATIENT_ID")
         # We randomly select the date of a procedure for any patient
-        .sample(n=1)[["IP_PATIENT_ID", "PROC_DATE"]]
+        .sample(n=1, random_state=random_state)[["IP_PATIENT_ID", "PROC_DATE"]]
         # Ensure date is a datetime object
         .astype({"PROC_DATE": "datetime64[ns]"}).assign(
             **{
@@ -197,8 +213,9 @@ def load_static_features(
             ],
         }
         column_alignment = {
-            # CONTROLS
+            # UCLA
             "GENDER": "SEX",
+            # CONTROLS
             "IP_CURRENT_PCP_ID": "PCP_IP_PROVIDER_ID",
             "VITAL_STATUS": "KNOWN_DECEASED",
             # CEDARS
@@ -485,7 +502,21 @@ def preproc_ucla_crrt(args: Namespace, merge_on: List[str]) -> DataFrame:
 
 def preproc_ucla_control(args: Namespace, merge_on: List[str]) -> DataFrame:
     procedures_df = load_procedures(args.ucla_control_data_dir, aggregate=False)
-    outcomes_df = construct_outcomes(procedures_df, merge_on)
+    outcomes_df = construct_outcomes(
+        procedures_df, merge_on, random_state=args.seed, filter_year=args.filter_year
+    )
+
+    # Only take control IDs
+    id_mappings = read_csv(
+        join(
+            args.ucla_control_data_dir,
+            "Case_to_Control_Cross_Reference.txt",
+        )
+    )
+    outcomes_df = outcomes_df[
+        outcomes_df.index.get_level_values(0).isin(id_mappings["IP_PATIENT_ID_CONTROL"])
+    ]
+
     controls_window_size = args.pre_start_delta
     """
     TODO[High]: this actually can match ucla_crrt by just using everythign from args, but we have to update construct_outcomes to also have "End Date"
