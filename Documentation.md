@@ -11,8 +11,13 @@ conda env create -n crrt_env --file env.yml
 ```
 run module_code/scripts/cedars_construct_features_outcomes.py
 ```
+
 ```
-run module_code/scripts/map_cedars_* # (labs, medications, procedures)
+run module_code/scripts/controls_construct_features.py
+```
+
+```
+run module_code/scripts/construct_*_mappings.py # (labs, medications, procedures)
 ```
 
 To align lab units:
