@@ -18,6 +18,23 @@ This code has been tested on Linux Ubuntu 22.04 with Python 3.9.16.
 conda env create -n crrt_env --file env.yml
 ```
 
+## Demo
+
+The demo data consists of completely random data of 50 simulated subject, only to be used for testing the code.
+
+First install dependencies (<5 minutes).
+```
+conda env create -n crrt_env --file env.yml
+```
+
+Next, run the demo script, which runs one tuning iteration on a single cohort, and then evaluates on the hold-out test set. Set the path for 'HEAD'. (~10 minutes)
+```
+bash ./run_demo.sh
+```
+
+Expected output will be 5 folders at '--local-log-path': 4 training/tuning, and 1 evaluation. The evaluation should output metric plots demonstrating perfect performance on this dummy dataset.
+
+
 ## Data preprocessing
 
 ```
