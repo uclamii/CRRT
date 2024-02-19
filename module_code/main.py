@@ -48,9 +48,9 @@ def run_experiment(args: Namespace, trials=None):
             run_name += f" // tune trial: {trials.number}"
         elif args.new_eval_cohort and args.rolling_evaluation:
             if args.reference_window:
-                if args.min_days_on_crrt > 0:
+                if args.max_days_on_crrt > 7:
                     run_name += (
-                        f" // post_eval_{args.eval_cohort}_{args.min_days_on_crrt} best"
+                        f" // post_eval_{args.eval_cohort}_{args.max_days_on_crrt} best"
                     )
                 else:
                     run_name += f" // post_eval_{args.eval_cohort} best"
