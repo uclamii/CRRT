@@ -20,20 +20,22 @@ conda env create -n crrt_env --file env.yml
 
 ## Demo
 
-The demo data consists of completely random data of 50 simulated subject, only to be used for testing the code.
+The demo data consists of completely random data of 50 simulated subjects for one cohort, only to be used for testing the code.
 
 First install dependencies (<5 minutes).
 ```
 conda env create -n crrt_env --file env.yml
 ```
 
-Next, run the demo script, which runs one tuning iteration on a single cohort, and then evaluates on the hold-out test set. Set the path for 'HEAD'. (~10 minutes)
+Next, run the demo script, which runs one tuning iteration on a single cohort, and then evaluates on a hold-out test set. Set the path for 'HEAD'. (~10 minutes)
 ```
 bash ./run_demo.sh
 ```
 
 Expected output will be 5 folders at '--local-log-path': 4 training/tuning, and 1 evaluation. The evaluation should output metric plots demonstrating perfect performance on this dummy dataset.
 
+## Data
+Real data should be handled with care in a secure environment. The de-identified EHR data are available from the corresponding author upon reasonable request.
 
 ## Data preprocessing
 
@@ -70,8 +72,6 @@ parameters to set in scripts:
 - max_days_on_crrt=7, if 7 day max window in crrt
 - num_days_to_slide_fwd=7, just to slide this 7 days forward
 - num_days_to_slide_bwd = -3, just to slide this 3 days backward
-
-
 
 Everything can be triggered from `main.py` and can be adjusted in `options.yml`. 
 Any flags you don't understand, search the project directory for `--<flag_name>` for its definition in ArgParse which will give an explanation.
@@ -141,9 +141,6 @@ Handle loading data / preprocess.
 notebooks   |
 All notebooks here. Exploratory, or to generate figures, etc.
 ```
-
-## Data
-Data should be handled with care in a secure environment.
 
 ## Production notes:
 
