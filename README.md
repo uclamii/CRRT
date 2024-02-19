@@ -8,7 +8,7 @@ All scripts require only a standard computer with enough RAM to support the in-m
 ### Software requirements
 
 #### OS Requirements
-This code has been tested on Linux Ubuntu 22.04.
+This code has been tested on Linux Ubuntu 22.04 with Python 3.9.16.
 
 #### Python Dependencies
 
