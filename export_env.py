@@ -19,7 +19,7 @@ if __name__ == "__main__":
     yml = yaml.safe_load(mamba_pkgs)
     # manually installed pip packages, requires pip-chill
     pip_pkgs = (
-        subprocess.run(["pip-chill", "--no-version"], stdout=subprocess.PIPE)
+        subprocess.run(["pip-chill"], stdout=subprocess.PIPE)
         .stdout.decode("utf-8")
         .split()
     )
