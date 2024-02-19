@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import lime
 import shap
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 import mlflow
 from os import makedirs
 import pickle
@@ -51,6 +52,9 @@ def shap_explainability(
     top_k: Optional[int] = None,
 ):
     if not isinstance(model, LogisticRegression):
+        # algorithm = "auto"
+        # if isinstance(model, RandomForestClassifier):
+        #     algorithm = "tree"
         explainer = shap.Explainer(
             model,
             feature_names=columns.to_list(),
@@ -71,28 +75,28 @@ def shap_explainability(
         )
 
     shap_values: shap.Explanation = explainer(data)
-    label_dims = [1, 0, 1, 0]
-    for label_dim, sample_type in zip(label_dims, ["tp", "tn", "fp", "fn"]):
-        # explain 1 (just randomly pick first) sample from tp and tn
-        idxs = filter_fns[sample_type](preds, labels).nonzero()[0]
-        if len(idxs) > 0:
-            i = idxs[0]
-            plt.clf()
-            if len(shap_values.shape) == 3:  # samples x features x output
-                figure = shap.plots.waterfall(shap_values[i][:, label_dim], show=False)
-            else:  # samples x features
-                figure = shap.plots.waterfall(shap_values[i], show=False)
-            figure.suptitle(
-                f"{prefix}{sample_type} Decision Explanation (SHAP, iloc: {i})", y=1
-            )
-            log_figure(
-                figure,
-                join(
-                    "img_artifacts",
-                    "explanation",
-                    f"{prefix}_{sample_type}_explanation",
-                ),
-            )
+    # label_dims = [1, 0, 1, 0]
+    # for label_dim, sample_type in zip(label_dims, ["tp", "tn", "fp", "fn"]):
+    #     # explain 1 (just randomly pick first) sample from tp and tn
+    #     idxs = filter_fns[sample_type](preds, labels).nonzero()[0]
+    #     if len(idxs) > 0:
+    #         i = idxs[0]
+    #         plt.clf()
+    #         if len(shap_values.shape) == 3:  # samples x features x output
+    #             figure = shap.plots.waterfall(shap_values[i][:, label_dim], show=False)
+    #         else:  # samples x features
+    #             figure = shap.plots.waterfall(shap_values[i], show=False)
+    #         figure.suptitle(
+    #             f"{prefix}{sample_type} Decision Explanation (SHAP, iloc: {i})", y=1
+    #         )
+    #         log_figure(
+    #             figure,
+    #             join(
+    #                 "img_artifacts",
+    #                 "explanation",
+    #                 f"{prefix}_{sample_type}_explanation",
+    #             ),
+    #         )
 
     if top_k:
         dump_shap_values(shap_values, preds, labels, prefix)
@@ -126,6 +130,7 @@ def shap_explainability(
                 f"{prefix}_feature_importance",
             ),
         )
+        plt.close()
 
 
 def lime_explainability(
