@@ -29,10 +29,16 @@ conda env create -n crrt_env --file env.yml
 
 Next, run the demo script, which runs one tuning iteration on a single cohort, and then evaluates on a hold-out test set. Set the path for 'HEAD'. (~10 minutes)
 ```
+'''
+Set the path for 'HEAD' as the path to the demo data to avoid this error
+./run_demo.sh: line 7: syntax error near unexpected token `newline'
+./run_demo.sh: line 7: `export HEAD=<PATH_TO_DEMO_FOLDER>'
+'''
+
 bash ./run_demo.sh
 ```
 
-Expected output will be 5 folders at '--local-log-path': 4 training/tuning, and 1 evaluation. The evaluation should output metric plots demonstrating perfect performance on this dummy dataset.
+Expected output will be 5 folders at '--local-log-path': 4 training/tuning, and 1 evaluation. The evaluation should output metric plots demonstrating 0.5 AUROC performance on this dummy dataset.
 
 ## Data
 Real data should be handled with care in a secure environment. The de-identified EHR data are available from the corresponding author upon reasonable request.
