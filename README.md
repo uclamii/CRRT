@@ -8,7 +8,7 @@ All scripts require only a standard computer with enough RAM to support the in-m
 ### Software requirements
 
 #### OS Requirements
-This code has been tested on Linux Ubuntu 22.04 with Python 3.9.16.
+This code has been tested on Linux Ubuntu 22.04 with Python 3.9.16 and Anaconda 23.1.0.
 
 #### Python Dependencies
 
@@ -24,7 +24,9 @@ The demo data consists of completely random data of 50 simulated subjects for on
 
 First install dependencies (<5 minutes).
 ```
-conda env create -n crrt_env --file env.yml
+conda env create -n crrt_demo --file env.yml
+
+conda activate crrt_demo
 ```
 
 Next, run the demo script, which runs one tuning iteration on a single cohort, and then evaluates on a hold-out test set. Set the path for 'HEAD'. (~10 minutes)
@@ -38,7 +40,7 @@ Set the path for 'HEAD' as the path to the demo data to avoid this error
 bash ./run_demo.sh
 ```
 
-Expected output will be 5 folders at '--local-log-path': 4 training/tuning, and 1 evaluation. The evaluation should output metric plots demonstrating 0.5 AUROC performance on this dummy dataset.
+Expected output will be 5 folders at '--local-log-path': 4 training/tuning, and 1 evaluation. The evaluation should output metric plots demonstrating 0.5 AUROC performance on this dummy dataset. Some errors (such as feature importance for LightGBM) may appear, due to the data being completely random. The script, however, should still run to completion. 
 
 ## Data
 Real data should be handled with care in a secure environment. The de-identified EHR data are available from the corresponding author upon reasonable request.
