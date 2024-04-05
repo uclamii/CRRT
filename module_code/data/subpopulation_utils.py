@@ -1,4 +1,7 @@
-# maps indication group name to a dictionary of the category name within that group, and a tuple of its column name and its value or range of values.
+"""
+maps indication group name to a dictionary of the category name within that group, and a tuple of its column name and its value or range of values.
+"""
+
 from typing import Dict, Tuple, Union, List, Any
 
 

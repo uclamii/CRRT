@@ -1,3 +1,7 @@
+"""
+Adhoc utility functions
+"""
+
 import logging
 import os
 import numpy as np

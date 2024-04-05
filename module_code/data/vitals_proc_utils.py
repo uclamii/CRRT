@@ -1,3 +1,7 @@
+"""
+Vitals processing utils
+"""
+
 import logging
 from pandas import DataFrame, concat, to_datetime
 

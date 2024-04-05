@@ -1,3 +1,7 @@
+"""
+Define abstractions for data loader objects
+"""
+
 from argparse import ArgumentParser, Namespace
 import inspect
 from typing import Callable, Optional, Tuple, Union, List
@@ -44,6 +48,7 @@ class CLIInitialized:
         return cls(**data_kwargs)
 
 
+# Used in SklearnCRRTDataModule
 class AbstractCRRTDataModule(ABC, CLIInitialized):
     @abstractmethod
     def get_post_split_transform(self, train: DataLabelTuple) -> Callable:
@@ -63,6 +68,7 @@ class AbstractCRRTDataModule(ABC, CLIInitialized):
         pass
 
 
+# Used in TorchCRRTDataset
 class CRRTDataset:
     def __init__(
         self,
