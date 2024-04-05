@@ -1,3 +1,8 @@
+"""
+Any final preprocessing of the already processed dataframe
+Used in load.py
+"""
+
 from argparse import Namespace
 import pandas as pd
 
@@ -31,6 +36,7 @@ def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
         "CPT_SECTION_na",
         "pr_CCS_CODE_na",
         "dx_CCS_CODE_na",
+        # Unwanted labs
         "ISSUE DATE_min",
         "ISSUE DATE_max",
         "ISSUE DATE_mean",
@@ -72,6 +78,8 @@ def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
     # drop high missingness
     if args.drop_percent is not None:
         orig_columns = df.columns
+
+        # For recordkeeping
         before_filter_unique_features = (
             df.columns.str.replace(".*_indicator", "indicator", regex=True)
             .str.replace("RACE.*", "RACE", regex=True)
@@ -89,6 +97,7 @@ def adhoc_preprocess_data(df: pd.DataFrame, args: Namespace) -> pd.DataFrame:
         print(f"Keeping {len(keep_list)} columns from {len(nulls)}")
         df = df.loc[:, keep_list]
 
+        # For recordkeeping
         after_filter_unique_features = (
             df.columns.str.replace(".*_indicator", "indicator", regex=True)
             .str.replace("RACE.*", "RACE", regex=True)

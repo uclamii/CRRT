@@ -1,3 +1,9 @@
+"""
+
+Wrapper script for exporting conda/mamba packages and pip installations to an env.yml
+
+"""
+
 from argparse import ArgumentParser
 import subprocess
 import yaml

@@ -1,3 +1,9 @@
+"""
+
+Testing of dataloaders
+
+"""
+
 from argparse import Namespace
 from typing import Dict, List
 import unittest
@@ -38,6 +44,7 @@ class TestSklearnLoaders(unittest.TestCase):
             time_interval=None,
             preprocessed_df_file=None,
             preselect_features=[],
+            new_eval_cohort=False,
         )
 
     def multiindex_from_indices(self, indices: List[int]) -> pd.MultiIndex:
@@ -67,14 +74,16 @@ class TestSklearnLoaders(unittest.TestCase):
             """Load depending on cohort, make up data."""
             # have same columns different indices. required to have outcome
             if args[-1] == "ucla_crrt" or kwargs.get("cohort", "") == "ucla_crrt":
-                return self.create_mock_df(
-                    feature_names[0], list(range(1, nsamples, 2))
+                return (
+                    self.create_mock_df(feature_names[0], list(range(1, nsamples, 2))),
+                    feature_names[0],
                 )  # indices odd
             elif (
                 args[-1] == "ucla_control" or kwargs.get("cohort", "") == "ucla_control"
             ):
-                return self.create_mock_df(
-                    feature_names[1], list(range(0, nsamples, 2))
+                return (
+                    self.create_mock_df(feature_names[1], list(range(0, nsamples, 2))),
+                    feature_names[1],
                 )  # indices even
 
         return load_data
@@ -240,7 +249,7 @@ class TestSklearnLoaders(unittest.TestCase):
         self.assertTrue(all(data.split_pt_ids["test"] % 2 == 0))
 
         # the entire test X, y should be the entire ucla control
-        df = self.load_data_side_effect(
+        df, _ = self.load_data_side_effect(
             [self.feature_names, self.feature_names], self.nsamples
         )("ucla_control")
         for df1, df2 in [

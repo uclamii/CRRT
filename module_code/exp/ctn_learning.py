@@ -1,3 +1,7 @@
+"""
+TODO: this has not been maintained. Will update as we move towards dynamic models
+"""
+
 from argparse import Namespace
 
 from data.torch_loaders import TorchCRRTDataModule

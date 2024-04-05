@@ -1,3 +1,8 @@
+"""
+Module for processing data tables for modelling
+TODO: this has not been maintained. Will update as we move towards dynamic models
+"""
+
 from argparse import ArgumentParser
 from typing import Callable, Optional, Tuple, Union
 import pandas as pd

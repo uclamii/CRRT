@@ -1,3 +1,7 @@
+"""
+Prior cleaning of duplicates. Reduces overhead
+"""
+
 import pandas as pd
 
 if __name__ == "__main__":

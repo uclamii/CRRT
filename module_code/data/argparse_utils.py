@@ -7,6 +7,10 @@ import re
 def string_list_to_list(
     list_string: str, choices: Optional[List[str]] = None, convert: type = str
 ) -> List:
+    """
+    When list is passed as a string literal, convert back into a list type
+    """
+
     # strip any {<space>, ', " [, ]}" and then split by comma
     values = re.sub(r"[ '\"\[\]]", "", list_string)
 
@@ -14,8 +18,10 @@ def string_list_to_list(
     if len(values) < 1:
         return []
 
+    # split by comma
     values = values.split(",")
 
+    # generate list
     if choices:
         values = [convert(x) for x in values if x in choices]
     else:
@@ -24,6 +30,10 @@ def string_list_to_list(
 
 
 def string_dict_to_dict(dict_string: str, choices: Optional[List[str]] = None) -> List:
+    """
+    When dict is passed as a string literal, convert back into a dict type
+    """
+
     dict_obj = loads(dict_string.replace("'", '"'))
     if choices:  # filter down
         dict_obj = {key: value for key, value in dict_obj.items() if key in choices}

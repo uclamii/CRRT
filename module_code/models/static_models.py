@@ -1,3 +1,7 @@
+"""
+Modeling for the static problem
+"""
+
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable, Dict, List, Optional, Union
 from posixpath import join, dirname
@@ -161,6 +165,7 @@ class StaticModel(AbstractModel, HyperparametersMixin):
         self.plots = self.configure_plots(self.hparams["plot_names"])
 
     def build_model(self):
+        # Get the corresponding model object
         if self.hparams["modeln"] in ALG_MAP:
             model_cls = ALG_MAP[self.hparams["modeln"]]
         else:
@@ -337,7 +342,6 @@ class StaticModel(AbstractModel, HyperparametersMixin):
 class CRRTStaticPredictor(BaseSklearnPredictor):
     """
     Wrapper predictor class, compatible with sklearn.
-    Uses longitudinal model to do time series classification on tabular data.
     Implements fit and transform.
     """
 

@@ -1,3 +1,9 @@
+"""
+
+Testing of utils
+
+"""
+
 from argparse import Namespace
 import unittest
 import unittest.mock as mock

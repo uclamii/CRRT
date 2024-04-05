@@ -1,9 +1,15 @@
+"""
+Manual grid search
+We have moved to optuna
+"""
+
 from random import sample
 from itertools import product
 import itertools
 import json
 import warnings
 import numpy as np
+
 warnings.filterwarnings("ignore")
 
 
@@ -34,7 +40,7 @@ def random_search(num_searches=40, **kwargs):
     # if num_searches is greater than 80% cartesian product set size, then call grid search instead
     # NOTE: 80% is used so random search doesn't take forever to find a not selected set of hyper-parameter choices
     cs_prod_len = float(np.prod([len(remove_duplicates(val)) for val in hyps_vals]))
-    if num_searches > .80 * cs_prod_len:
+    if num_searches > 0.80 * cs_prod_len:
         return grid_search(**kwargs)
     for _ in range(num_searches):
         not_contained = False

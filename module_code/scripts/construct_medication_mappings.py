@@ -1,3 +1,7 @@
+"""
+Create med mapping between UCLA/Cedars
+"""
+
 from argparse import Namespace
 import difflib
 import pickle

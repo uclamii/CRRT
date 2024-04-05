@@ -1,3 +1,8 @@
+"""
+Error analysis 
+- Using mealy
+"""
+
 from logging import warn
 from typing import List
 from mlflow import log_artifact, active_run

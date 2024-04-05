@@ -1,3 +1,7 @@
+"""
+Create unit mapping between UCLA/Cedars
+"""
+
 from argparse import Namespace
 import pandas as pd
 import numpy as np
@@ -16,9 +20,9 @@ def construct_unit_mapping(args: Namespace):
     ucla_crrt_df = read_files_and_combine(["Labs.txt"], args.ucla_crrt_data_dir)
     ucla_units = ucla_crrt_df.groupby("COMPONENT_NAME")["REFERENCE_UNIT"]
     mode_and_count = ucla_units.agg(
-        lambda x: (pd.Series.mode(x)[0], w[0])
-        if len(w := x.value_counts()) > 0
-        else np.nan
+        lambda x: (
+            (pd.Series.mode(x)[0], w[0]) if len(w := x.value_counts()) > 0 else np.nan
+        )
     ).dropna()
     unit_mapping = pd.DataFrame(
         mode_and_count.tolist(),

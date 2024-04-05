@@ -1,3 +1,7 @@
+"""
+Module for generating the data table to be used in analysis
+"""
+
 from argparse import Namespace
 from functools import reduce
 import logging
@@ -65,6 +69,7 @@ def load_outcomes(
     Filters: no pediatric patient outcomes, patients with malformed outcome (i.e. 0 or >1 of the 4 outcomes indicated).
     """
 
+    ### Outcomes ###
     loading_message("Outcomes")
     outcomes_df = read_excel(
         join(raw_data_dir, outcome_file), sheet_name="2015-2021 YTD"

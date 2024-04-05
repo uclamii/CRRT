@@ -1,3 +1,8 @@
+"""
+Functions for processing of different longitudinal features
+Used in load.py
+"""
+
 import logging
 from pickle import load
 from os.path import isfile, join
@@ -60,19 +65,18 @@ def load_diagnoses(
 
     # convert icd10 to ccs to reduce number of categories for diagnoses.
     ce = CCSEngine(mode="dx")
-    # ICD9 is 2013-15. Outcomes are 2018-19, so we will ignore ICD9 codes for now.
-    # They will just show as NaNs.
-    # NOTE: This needs to change if our time window gets very large and we extend into 2013-15.
-    # icd10_mask = dx_df["ICD_TYPE"] == 10
 
+    # ICD9 is 2013-15. Outcomes are 2018-19
     # Cedars does not have ICD_TYPE (all ICD10)
     if "ICD_TYPE" in dx_df.columns:
+        # ICD9 to ICD10
         dx_df = icd9_to_icd10(dx_df, icd_mapping_file)
 
-        # remove remaining icd9
+        # Remove remaining non-converted icd9
         icd10_mask = dx_df["ICD_TYPE"] == 10
         dx_df = dx_df[icd10_mask]
 
+    # Convert
     dx_df = hcuppy_map_code(
         dx_df,
         code_col="ICD_CODE",
@@ -86,6 +90,8 @@ def load_diagnoses(
         ],
         hcuppy_converter_function=ce.get_ccs,
     )
+
+    # Aggregate over window
     dx_feature = aggregate_cat_feature(
         dx_df,
         agg_on="dx_CCS_CODE",
@@ -104,6 +110,8 @@ def load_vitals(
     time_window: Optional[Union[DataFrame, str]] = None,
 ) -> DataFrame:
     loading_message("Vitals")
+
+    # Controls has a large file with duplicates - removed duplicates beforehand to avoid constant overhead
     if isfile(join(raw_data_dir, vitals_noduplicates_file)):
         print("Loading file without duplicates")
         vitals_df = read_files_and_combine([vitals_noduplicates_file], raw_data_dir)
@@ -120,6 +128,7 @@ def load_vitals(
         axis=1,
     )
 
+    # Extra processing to unify UCLA/Cedars/Controls
     vitals_df = unify_vital_names(vitals_df)
     vitals_df = split_sbp_and_dbp(vitals_df)
 
@@ -146,6 +155,7 @@ def load_vitals(
     # calculate BMI if missing. Should only be the case for Cedars
     vitals_df = calculate_bmi(vitals_df)
 
+    # Aggregate over window
     vitals_feature = aggregate_ctn_feature(
         vitals_df,
         agg_on="VITAL_SIGN_TYPE",
@@ -178,6 +188,7 @@ def load_medications(
     loading_message("Medications")
     rx_df = read_files_and_combine([rx_file], raw_data_dir)
 
+    # Cedars alignment.
     rx_df = rx_df.rename(
         {
             "MEDISPAN_SUBCLASS_NAME": "PHARM_SUBCLASS",
@@ -187,14 +198,16 @@ def load_medications(
         axis=1,
     )
 
-    # Additional cleanup
+    # Additional cleanup of odd names
     rx_df = rx_df.dropna(subset=["PHARM_SUBCLASS"])
     rx_df["PHARM_SUBCLASS"] = rx_df["PHARM_SUBCLASS"].str.upper()
-    rx_df = rx_df[~rx_df["PHARM_SUBCLASS"].str.contains("EACH")]  # 277
-    rx_df = rx_df[~rx_df["PHARM_SUBCLASS"].str.isnumeric()]  # 251
+    rx_df = rx_df[~rx_df["PHARM_SUBCLASS"].str.contains("EACH")]  # 277 cases
+    rx_df = rx_df[~rx_df["PHARM_SUBCLASS"].str.isnumeric()]  # 251 cases
 
+    # Alignment
     rx_df = map_medications(rx_df, raw_data_dir)
 
+    # Aggregate over window
     rx_feature = aggregate_cat_feature(
         rx_df,
         agg_on="PHARM_SUBCLASS",
@@ -241,6 +254,7 @@ def load_labs(
     loading_message("Labs")
     labs_df = read_files_and_combine([labs_file], raw_data_dir)
 
+    # Cedars alignment
     labs_df = map_encounter_to_patient(raw_data_dir, labs_df)
     labs_df = labs_df.rename(
         {
@@ -251,24 +265,30 @@ def load_labs(
         axis=1,
     )
 
+    # Further alignment
     labs_df = map_labs(labs_df, raw_data_dir)
+
+    # Unique preprocessing
     labs_df = specific_lab_preproc(labs_df, lab_name="FIO2, ARTERIAL")
     labs_df = specific_lab_preproc(labs_df, lab_name="FIO2, VENOUS")
     labs_df["RESULTS"] = force_boolean(labs_df["RESULTS"])
     labs_df["RESULTS"] = force_to_upper_lower_bound(labs_df["RESULTS"])
+
     # alignment comes before removing any strings from RESULTS
     labs_df = align_units(labs_df, raw_data_dir)
+
     ## keeping only numeric results
     # Convert non-numeric values to NaN
     numeric_series = pd.to_numeric(labs_df["RESULTS"], errors="coerce")
     labs_df = labs_df[numeric_series.notnull()].reset_index(drop=True)
+
     # converting to float otherwise skew method breaks in aggregation
     labs_df["RESULTS"] = pd.to_numeric(labs_df["RESULTS"])
 
+    # Aggregate over window
     labs_feature = aggregate_ctn_feature(
         labs_df,
         # DESCRIPTION will give "Basic Metabolic Panel" even if internally it's "Sodium"
-        # TODO: Sodium(LDQ) vs Sodium under description=sodium
         agg_on="COMPONENT_NAME",
         agg_values_col="RESULTS",
         time_col="ORDER_TIME",
@@ -316,6 +336,7 @@ def load_problems(
     else:
         active_and_icd10_mask = problems_df["PROBLEM_STATUS"].str.upper() == "ACTIVE"
 
+    # Convert
     problems_df = hcuppy_map_code(
         problems_df[active_and_icd10_mask],
         code_col="ICD_CODE",
@@ -330,6 +351,7 @@ def load_problems(
         hcuppy_converter_function=ce.get_ccs,
     )
 
+    # Aggregate over window
     problems_feature = aggregate_cat_feature(
         problems_df,
         agg_on="pr_CCS_CODE",
@@ -354,6 +376,7 @@ def load_procedures(
     loading_message("Procedures")
     procedures_df = read_files_and_combine([procedures_file], raw_data_dir)
 
+    # Cedars/Control alignment
     procedures_df = procedures_df.rename(
         {
             # Control
@@ -365,6 +388,7 @@ def load_procedures(
         axis=1,
     )
 
+    # Cedars mapping to CPT
     procedures_df = map_proc_code_to_cpt(procedures_df, raw_data_dir)
 
     # Convert CPT codes to their sections (less granular)
@@ -379,6 +403,7 @@ def load_procedures(
     if not aggregate:
         return procedures_df
 
+    # Aggregate over window
     procedures_feature = aggregate_cat_feature(
         procedures_df,
         agg_on="CPT_SECTION",

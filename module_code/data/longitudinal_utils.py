@@ -1,3 +1,8 @@
+"""
+Utility functions for longitudinal data
+Used in longitudinal_features.py
+"""
+
 import logging
 from typing import Callable, Dict, List, Optional, Union
 import numpy as np

@@ -1,3 +1,7 @@
+"""
+Create procedure mapping between UCLA/Cedars
+"""
+
 from argparse import Namespace
 from typing import List
 import pickle

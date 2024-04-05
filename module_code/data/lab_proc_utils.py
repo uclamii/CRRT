@@ -1,3 +1,7 @@
+"""
+Laboratory processing utils
+"""
+
 from typing import Callable, Dict, Tuple, Union
 from pandas import DataFrame, Series, to_numeric
 from numpy import nan
@@ -7,6 +11,7 @@ from pint import UnitRegistry, Quantity, UndefinedUnitError, DimensionalityError
 
 from data.utils import FILE_NAMES, loading_message, read_files_and_combine
 
+# Define mapping between equivalent unit types
 MANUAL_EQUIVALENT_UNITS = [
     {"/hpf", "per hpf"},
     {"ml", "ml/d"},  # 24 HR. URINE VOLUME
@@ -38,6 +43,8 @@ MANUAL_EQUIVALENT_UNITS = [
     {"m/ul", "mi/mm3", "m/mm3", "x10e6/ul"},
     {"iv", "IV", "index", "INDEX"},
 ]
+
+# Define mapping from string quantity to numeric scale
 # https://www.cdc.gov/cliac/docs/addenda/cliac0313/13A_CLIAC_2013March_UnitsOfMeasure.pdf
 NUMERICAL_COUNT_UNIT_VALUES = {
     "x10e3": 1e3,
@@ -55,7 +62,9 @@ NUMERICAL_COUNT_UNIT_VALUES = {
     "x10*12": 1e12,
     "cells": 1,
 }
-MOL_TO_EQ = {  # meq/mol
+
+# Define mapping of meq/mol scalings
+MOL_TO_EQ = {
     "ANION GAP": 1,
     "BASE EXCESS": 1,
     "BICARBONATE": 1,
@@ -66,7 +75,9 @@ MOL_TO_EQ = {  # meq/mol
     "POTASSIUM": 1,
     "SODIUM": 1,
 }
-G_TO_MOL = {  # inverse of molecular weight, so mol/g
+
+# Inverse of molecular weight, so mol/g
+G_TO_MOL = {
     "AMMONIA": 0.058719906,
     "BETA-HYDROXYBUTYRATE": 0.009605,
     "CREATININE": 0.008842,
@@ -175,7 +186,8 @@ def map_labs(
     )
     # static_df["COMPONENT_NAME"] = static_df["COMPONENT_NAME"].replace(loaded_dict)
 
-    # pretty crude, some labs should be split into venous/arterial. right now, encode possible mappings with $, with the convention of arterial being first. Iterate and find these
+    # pretty crude, some labs should be split into venous/arterial.
+    # right now, encode possible mappings with $, with the convention of arterial being first. Iterate and find these
     def venous_arterial_split(description, component):
         if "ven" in description.lower():
             return component.split("$")[-1]
@@ -199,10 +211,11 @@ def map_labs(
     ].apply(
         lambda x: venous_arterial_split(x["DESCRIPTION"], x["COMPONENT_NAME"]), axis=1
     )
+
+    # Slower
     # for i, row in static_df.iterrows():
     #     if "$" not in row["COMPONENT_NAME"]:
     #         continue
-
     #     if "ven" in row["DESCRIPTION"].lower():
     #         static_df.loc[i, "COMPONENT_NAME"] = row["COMPONENT_NAME"].split("$")[-1]
     #     elif "art" in row["DESCRIPTION"].lower():
@@ -235,10 +248,12 @@ def align_units(
     with open(join(raw_data_dir, unit_mapping_file), "rb") as f:
         mapping = load(f)  # map lab -> mode unit + count
 
+    # Use the mask to avoid rows with no mapping
     mask = labs_df["COMPONENT_NAME"].isin(mapping.keys())
     labs_df.loc[mask, "RESULTS"] = labs_df.loc[
         mask, ["RESULTS", "COMPONENT_NAME", "REFERENCE_UNIT"]
     ].apply(convert(mapping, unit_converter), axis=1)
+
     # Drop all rows with NaN results
     return labs_df[labs_df["RESULTS"].notna()]
 
@@ -260,6 +275,7 @@ def convert(
         # if lab_unit_info["count"] < 50:
         # return nan
 
+        # cleaning
         unit = cleanup_unit(sample["REFERENCE_UNIT"])
         mode = cleanup_unit(lab_unit_info["mode_unit"])
 
@@ -269,6 +285,7 @@ def convert(
             for equiv_set in MANUAL_EQUIVALENT_UNITS
         )
 
+        # conversion
         if not units_are_equivalent:
             try:
                 result, unit = convert_between_g_mol_eq(lab_name, result, unit, mode)

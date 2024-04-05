@@ -1,3 +1,10 @@
+"""
+
+Command line interface for defining different arguments
+
+"""
+
+# External packages
 from argparse import ArgumentParser, Namespace, SUPPRESS
 import inspect
 from os.path import isfile
@@ -5,6 +12,7 @@ import sys
 import yaml
 from typing import Optional, Union, List
 
+# Modules
 from data.argparse_utils import YAMLStringDictToDict
 from data.torch_loaders import TorchCRRTDataModule
 from data.sklearn_loaders import SklearnCRRTDataModule

@@ -1,3 +1,7 @@
+"""
+Module for processing data tables for modelling
+"""
+
 from argparse import ArgumentParser, Namespace
 from functools import reduce
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -94,9 +98,12 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         """
         Ops performed across GPUs. e.g. splits, transforms, etc.
         """
+
+        # In the case of multiple cohorts, run an initial load of the data and save the columns that exist in all cohorts
         if len(args.preselect_features) > 0 and reference_cols is None:
             reference_cols = self.preload_data_for_featselect(args)
 
+        # Load the training data
         X, y = self.load_data_and_additional_preproc(
             args, self.train_val_cohort, reference_cols
         )
@@ -135,11 +142,11 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         # set this here instead of init so that outcome col isn't included
         self.ctn_columns = X.columns.difference(self.categorical_columns)
 
+        # External evaluation
         if args.new_eval_cohort and args.reference_window:
-            split_args = [X, y, reference_ids]
-
             # This is redundant and will happen for sure.
             # It just means that not all data for testing exists in X, y
+            split_args = [X, y, reference_ids]
             if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
                 split_args += [X_eval, y_eval]
 
@@ -147,10 +154,9 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
             X_y_tuples = self.split_dataset(*split_args, use_ref_test=False)
             split_names = list(X_y_tuples.keys())
         else:
-            split_args = [X, y, reference_ids]
-
             # This will happen if not reference window, but still new_eval_cohort
-            # It just means that not all data for testing exists in X, y
+            # Like above, it means that not all data for testing exists in X, y
+            split_args = [X, y, reference_ids]
             if self.train_val_cohort != self.eval_cohort or args.new_eval_cohort:
                 split_args += [X_eval, y_eval]
 
@@ -186,15 +192,22 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 setattr(self, split, (self.data_transform(X), y))
 
     def preload_data_for_featselect(self, args: Namespace):
-        # Should be at least 2
+        """
+        In the case of multiple cohorts, run an initial load of the data and save the columns that exist in all cohorts
+        """
+
+        # Should be at least 2 cohorts
         assert len(args.preselect_features) > 1
 
         cohorts = args.preselect_features
+
+        # Iterate through all cohorts
         X_all_cohorts = []
         for single_cohort in cohorts:
             X, _ = self.load_data_and_additional_preproc(args, single_cohort)
             X_all_cohorts.append(X)
 
+        # Take the intersection of all columns
         all_cols = X_all_cohorts[0].columns.intersection(X_all_cohorts[1].columns)
         for i in range(2, len(X_all_cohorts)):
             all_cols = all_cols.intersection(X_all_cohorts[i].columns)
@@ -205,6 +218,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 f"{len(X_all_cohorts[i].columns)} in {cohorts[i]} cohort. Removed {len(X_all_cohorts[i].columns.difference(all_cols))} columns"
             )
 
+        # For recordkeeping
         unique_features = (
             all_cols.str.replace(".*_indicator", "indicator", regex=True)
             .str.replace("RACE.*", "RACE", regex=True)
@@ -232,7 +246,10 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         y_all_cohorts = []
         all_orig_columns = pd.Index([])
 
+        # Iterate through each cohort
         for single_cohort in cohort:
+
+            # load for just one cohort
             X, y, orig_columns = self.single_cohort_load_data_and_additional_preproc(
                 args, single_cohort, reference_cols
             )
@@ -248,6 +265,7 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         X_all_cohorts = pd.concat(X_all_cohorts)
         y_all_cohorts = pd.concat(y_all_cohorts)
 
+        # Recordkeeping
         unique_features = (
             all_orig_columns.str.replace(".*_indicator", "indicator", regex=True)
             .str.replace("RACE.*", "RACE", regex=True)
@@ -265,7 +283,12 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
     def single_cohort_load_data_and_additional_preproc(
         self, args: Namespace, cohort: str, reference_cols=None
     ) -> Tuple[pd.DataFrame, pd.Series]:
+        """Wrapper function for loading one cohort"""
+
+        # Get the data table
         preprocessed_df, orig_columns = load_data(args, cohort)
+
+        # Split into design matrix and outcome
         X, y = (
             preprocessed_df.drop(self.outcome_col_name, axis=1),
             preprocessed_df[self.outcome_col_name],
@@ -296,15 +319,23 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         vals: Union[Any, List[Union[int, str, Tuple[int, int]]]],
         combine: str = "AND",
     ) -> pd.Series:
+        """
+        Returns a series (column) to filter the dataset (eg. by subgroups)
+        """
+
         def apply_check(col: str, val: Union[int, str, Tuple[int, int]]) -> pd.Series:
             if col in df.columns:
+                # Filter by range
                 if isinstance(val, tuple):  # assumes [a, b)
                     assert len(val) == 2, "Tuple passed isn't length two [a, b)."
                     return (df[cols] >= val[0]) & (df[cols] < val[1])
+                # Else, just filter by equivalence
                 return df[col] == val
             else:
                 return pd.Series(False, index=df.index)
 
+        # If filtering by multiple columns
+        # Define logic for intersection or union
         if isinstance(cols, list):
             assert isinstance(vals, list) and len(vals) == len(
                 cols
@@ -367,7 +398,6 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         Fit the feature selection transform based on either the k best features or the number of features
         above a correlation threshold. Passthrough option also available.
         """
-        # TODO: Test these work as intended
         if reference_cols_mask is not None:
             return Preselected(support_mask=reference_cols_mask)
         if self.kbest and self.corr_thresh:
@@ -385,7 +415,6 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
         return SelectKBest(lambda X, y: np.zeros(X.shape[1]), k="all")
 
     def stratify_groupby_split(self, X, y, n_splits):
-        # TODO TEST
         groups = X["IP_PATIENT_ID"]
         cv = StratifiedGroupKFold(
             n_splits=n_splits, shuffle=True, random_state=self.seed
@@ -442,12 +471,16 @@ class SklearnCRRTDataModule(AbstractCRRTDataModule):
                 sample_ids["train_val"], how="inner"
             )
             val_ids = reference_ids["val"].join(sample_ids["train_val"], how="inner")
+
             # test_ids will separately come from eval_cohort if it was different
             test_ids_key = "train_val" if not separate_eval_dataset else "eval"
+
+            # Use the test ids
             if use_ref_test:
                 test_ids = reference_ids["test"].join(
                     sample_ids[test_ids_key], how="inner"
                 )
+            # This will explicitly take the entire set of patients from X_eval, minus any train and val patients
             else:
                 test_ids = set(sample_ids[test_ids_key]).difference(
                     set(
