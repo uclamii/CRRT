@@ -1,3 +1,7 @@
+"""
+Define abstractions for model objects
+"""
+
 from typing import Callable, List, Type, Union
 from argparse import ArgumentParser
 from abc import ABC, abstractmethod

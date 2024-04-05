@@ -1,3 +1,7 @@
+"""
+TODO: this has not been maintained. Will update as we move towards dynamic models
+"""
+
 from argparse import ArgumentParser, Namespace
 from typing import Callable, Dict, List, Optional, Union
 import numpy as np
