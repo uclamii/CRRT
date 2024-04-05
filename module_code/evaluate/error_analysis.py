@@ -1,3 +1,8 @@
+"""
+Error analysis 
+- statistical tests between TP/FN, TN/FP, etc.
+"""
+
 from typing import List, Tuple, Union
 from numpy import ndarray, unique, concatenate
 from pandas import Series, DataFrame, crosstab

@@ -1,3 +1,8 @@
+"""
+Evaluation utils
+- metrics, bootstrapping, logging
+"""
+
 from typing import TYPE_CHECKING, Callable, List, Tuple, Dict, Any, Union
 from posixpath import dirname, join
 from os import makedirs
