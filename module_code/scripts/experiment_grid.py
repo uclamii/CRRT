@@ -1,3 +1,7 @@
+"""
+Wrapper around module_code/scripts/rolling_window_analysis.py
+"""
+
 import subprocess
 
 USE_ROLLING_WINDOW = False
@@ -14,9 +18,11 @@ if __name__ == "__main__":
     for train_val_cohort, eval_cohort in train_eval_pairs:
         command = [
             "python",
-            "module_code/scripts/rolling_window_analysis.py"
-            if USE_ROLLING_WINDOW
-            else "module_code/main.py",
+            (
+                "module_code/scripts/rolling_window_analysis.py"
+                if USE_ROLLING_WINDOW
+                else "module_code/main.py"
+            ),
             "--train_val_cohort",
             train_val_cohort,
             "--eval_cohort",

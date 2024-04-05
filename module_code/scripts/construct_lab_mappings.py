@@ -1,3 +1,7 @@
+"""
+Create lab mapping between UCLA/Cedars
+"""
+
 from argparse import Namespace
 import pickle
 import sys
@@ -48,16 +52,20 @@ def create_labs_mapping_dict(args: Namespace, cedars_labs: set, ucla_labs: set) 
     matching_cedars_lab_names = []
     matching_ucla_lab_names = []
 
+    # remove non alpha-numeric
     ucla_labs["REGEX_COMPONENT_NAME"] = ucla_labs["COMPONENT_NAME"].str.replace(
         "[^a-zA-Z0-9]", " ", regex=True
     )
+    # remove long whitespaces
     ucla_labs["REGEX_COMPONENT_NAME"] = ucla_labs["REGEX_COMPONENT_NAME"].apply(
         lambda x: re.sub(" +", " ", x).strip()
     )
 
+    # remove non alpha-numeric
     cedars_labs["REGEX_COMPONENT_NAME"] = cedars_labs["COMPONENT_NAME"].str.replace(
         "[^a-zA-Z0-9]", " ", regex=True
     )
+    # remove long whitespaces
     cedars_labs["REGEX_COMPONENT_NAME"] = cedars_labs["REGEX_COMPONENT_NAME"].apply(
         lambda x: re.sub(" +", " ", x).strip()
     )
@@ -176,20 +184,27 @@ def load_labs_from_scratch(args):
 
 
 def use_manual_file(cohort):
+    """
+    Use file containing manual mappings between labs
+    """
     df = read_excel("../Data/manual_labs_mapping.xlsx")
     mapping = {}
     for i, row in df.iterrows():
         # nan
         if row[cohort] != row[cohort]:
             continue
+        # nan
         if row[f"{cohort} Map"] != row[f"{cohort} Map"]:
             continue
 
+        # mapping required!
         if row[cohort] != row[f"{cohort} Map"]:
+            # found duplicate
             if row[cohort] in mapping.keys():
                 assert mapping[row[cohort]] == row[f"{cohort} Map"], print(
                     cohort, mapping[row[cohort]], row[f"{cohort} Map"]
                 )
+            # add map
             mapping[row[cohort]] = row[f"{cohort} Map"]
     return mapping
 

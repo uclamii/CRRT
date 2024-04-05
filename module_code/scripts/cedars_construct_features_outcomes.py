@@ -1,3 +1,7 @@
+"""
+Conversion of raw files from Cedars to similar format as UCLA
+"""
+
 from argparse import Namespace
 import pandas as pd
 from os.path import join

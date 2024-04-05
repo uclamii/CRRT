@@ -1,3 +1,7 @@
+"""
+Main driver script for all experiments
+"""
+
 from copy import deepcopy
 import sys
 from os import getcwd
