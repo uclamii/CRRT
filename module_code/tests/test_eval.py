@@ -1,3 +1,9 @@
+"""
+
+Testing of evaluation methods
+
+"""
+
 from argparse import Namespace
 from typing import List
 import unittest
@@ -37,6 +43,8 @@ class TestEvalModel(unittest.TestCase):
             "time_interval": None,
             "preprocessed_df_file": None,
             "preselect_features": [],
+            "new_eval_cohort": False,
+            "run_name": "test",
         }
         self.data = SklearnCRRTDataModule(
             SEED,
@@ -70,8 +78,9 @@ class TestEvalModel(unittest.TestCase):
     def load_data_side_effect(self, *args, **kwargs):
         """Load depending on cohort, make up data."""
         # have same columns different indices. required to have outcome
-        return self.create_mock_df(
-            self.feature_names, list(range(1, self.nsamples, 2))
+        return (
+            self.create_mock_df(self.feature_names, list(range(1, self.nsamples, 2))),
+            self.feature_names,
         )  # indices odd
 
     def do_nothing_side_effect(self, *args, **kwargs):
