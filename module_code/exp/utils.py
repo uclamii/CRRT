@@ -1,3 +1,7 @@
+"""
+Hyperparameter definitions
+"""
+
 from typing import Any, Dict, Optional
 import regex
 

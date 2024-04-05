@@ -1,3 +1,7 @@
+"""
+Experimentation pipeline for the static problem
+"""
+
 from argparse import Namespace
 from functools import reduce
 import pickle
@@ -22,7 +26,7 @@ def load_saved_data(
             original_columns,
             data_transform,
         ) = data.load_data_params(join(LOCAL_DATA_DIR, args.run_name, "static_data"))
-    # Requires a best_model_path
+    # Requires a best_model_path (loads from mlflow mlruns)
     else:
         (
             reference_ids,
@@ -45,7 +49,7 @@ def load_saved_model(
     # Load from local directory
     if load_local:
         model.load_model(join(LOCAL_MODEL_DIR, args.run_name, "static_model"))
-    # Requires a best_model_path
+    # Requires a best_model_path (loads from mlflow mlruns)
     else:
         model.load_model(join(args.best_model_path, "static_model"))
 

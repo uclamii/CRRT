@@ -1,3 +1,7 @@
+"""
+TODO: this has not been maintained, as we use hold-out test rather than CV
+"""
+
 from sklearn.utils import shuffle
 from sklearn.model_selection import StratifiedKFold
 from sklearn.linear_model import LogisticRegression
