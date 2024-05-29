@@ -1,5 +1,7 @@
 # Project Documentation
 
+[![DOI](https://zenodo.org/badge/691670016.svg)](https://zenodo.org/doi/10.5281/zenodo.11391748)
+
 ## System Requirements
 
 ### Hardware requirements
